@@ -1,0 +1,29 @@
+function SetupFolders()
+
+    %Specify required folders
+    folders.data = 'Data/';
+    folders.sol = 'Data/Solutions/';
+    folders.char = 'Data/Characteristics/';
+    folders.break = 'Data/Breakage/';
+    folders.fig = 'Data/Figures/';
+
+
+    % Check if there is a data folder
+    if ~exist(folders.data, 'dir')
+       mkdir(folders.data)
+    end
+
+    % Check if there is a solutions folder
+    if ~exist(folders.sol, 'dir')
+       mkdir(folders.sol)
+    end
+
+    % Check if there is a characteristics folder
+    if ~exist(folders.char, 'dir')
+       mkdir(fochar)
+    end
+
+
+
+
+end
