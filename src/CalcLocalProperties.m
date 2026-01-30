@@ -31,7 +31,7 @@ function params = CalcLocalProperties(y, params)
         for ix = 1:params.Nms
 
             %Calculate current mean diameters
-            params.n_mu(iz, ix) = params.nms(ix) .* (1 + params.X_mu(iz,ix));
+            params.n_mu(iz, ix) = params.nms(ix) .* params.X_Ar + params.nms(ix) .* (1 + params.X_mu(iz,ix));
             params.V_mu(iz, ix) = (params.n_mu(iz, ix) .* params.R .* params.T_mu(iz,ix))./params.p_func(z);
             params.d_mu(iz, ix) = ((6 .* params.V_mu(iz, ix))./pi).^(1/3);
 
@@ -51,6 +51,31 @@ function params = CalcLocalProperties(y, params)
             V_gas = V_gas + Ns_cell(ix) * V_cell * params.V_mu(iz, ix);
 
         end
+
+        %Calculate terms at boundaries
+        for ix = 1:(params.Nms + 1)
+
+            %Calculate current mean diameter
+            if ix < (params.Nms + 1) 
+                params.nb_mu(iz, ix) = params.nbs(ix) .* params.X_Ar + params.nbs(ix) .* (1 + params.X_mu(iz,ix));
+                params.Vb_mu(iz, ix) = (params.nb_mu(iz, ix) .* params.R .* params.T_mu(iz,ix))./params.p_func(z);
+            else
+                params.nb_mu(iz, ix) = params.nbs(ix) .* params.X_Ar + params.nbs(ix) .* (1 + params.X_mu(iz,ix-1));
+                params.Vb_mu(iz, ix) = (params.nb_mu(iz, ix) .* params.R .* params.T_mu(iz,ix-1))./params.p_func(z);
+            end
+            params.db_mu(iz, ix) = ((6 .* params.Vb_mu(iz, ix))./pi).^(1/3);
+
+            %Calculate differences
+            if ix > 1
+                params.dbds(iz, ix-1) = params.db_mu(iz, ix) - params.db_mu(iz, ix-1);
+            end
+
+            
+     
+
+        end
+
+
 
         V_dot_total = sum(V_dot); %m^3/s
 

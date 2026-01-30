@@ -64,7 +64,15 @@ function [c_src, c_snk] = Coalescence(y, params )
                 %k = coalesce_partners(ic,2);
     
                 %Caclulate Coalescence Rate
-                c_ij(j,k) = Coalescence_Rate(Ns_cell,j,k, iz, params, turb);
+                switch params.coalesce.model
+                    case 'Wang_2005'
+                        c_ij(j,k) = Coalescence_Wang(Ns_cell,j,k, iz, params, turb);
+                    case 'Scott_1968'
+                        c_ij(j,k) = Coalescence_constant(Ns_cell,j,k, iz, params, turb);
+                    case 'Hounslow_1988'
+                        c_ij(j,k) = Coalescence_constant(Ns_cell,j,k, iz, params, turb);
+                end
+                
             end
         end
 
@@ -82,9 +90,8 @@ function [c_src, c_snk] = Coalescence(y, params )
             yind = (zind-1) * params.Nms + xind;
 
             %Local density of this mass
-            N = y(yind); 
-            
-            Nb = N .* params.Vsz(zind);
+            N = y(yind);
+            Nb = N .* params.Vsz(zind); %Number of bubbles in the discrete volume
 
             %Pull coalescence partners and iterate through them
             coalesce_partners = params.coalesce_partners{xind};
@@ -109,6 +116,17 @@ function [c_src, c_snk] = Coalescence(y, params )
                 k = coalesce_partners(ic,2); %Index of second bubble coalescing
                 bias = coalesce_bias(ic);
                 eta = coalesce_etas(:,ic);
+                rat = coalesce_rats(:,ic);
+                
+                %Don't consider coalescence that creates bubbles larger
+                %than upper bound
+                if rat > 1
+                    rat = 0;
+                end
+                
+                
+
+
 
                 %Pull original numeric densities
                 jind = (zind-1) * params.Nms + j;
@@ -116,11 +134,28 @@ function [c_src, c_snk] = Coalescence(y, params )
                 Nj = y(jind);
                 Nk = y(kind);
 
+                % %Calculate eta - TEMPORARY
+                % if xind < params.Nms
+                %     m_jk = params.mms(j) + params.mms(k);
+                %     m_low = params.mms(ix-1);
+                %     m_mid = params.mms(ix);
+                %     m_high = params.mms(ix+1);
+                %     if bias < 0
+                %         eta_lower = (m_mid - m_jk)./(m_mid - m_low);
+                %         eta_higher = (m_jk - m_low)./(m_mid - m_low);
+                %     else
+                %         eta_lower = (m_high - m_jk)./(m_high - m_mid);
+                %         eta_higher = (m_jk - m_mid)./(m_high - m_mid);
+                %     end
+                % end
+
                 %Caclulate Coalescence Rate - pull from matrix
                 c_jk = c_ij(j,k);   %Coalescence_Rate(y,i,j,k, xind, zind, params, turb);
 
                 %Determine rate for each of the three cells
                 if bias < 0 %Shares with smaller (left) brackt
+
+
                     c_jk_smaller = (1-eta) * c_jk * Nj * Nk;
                     c_jk_middle = eta * c_jk * Nj * Nk;
                     c_jk_larger = 0;
@@ -145,7 +180,7 @@ function [c_src, c_snk] = Coalescence(y, params )
 
                 %Avoid double counting
                 if j == k
-                    dcoeff = 1;%(1-0.5);
+                    dcoeff = 1; %(1-0.5);
                 else
                     dcoeff = 1;
                 end
@@ -164,8 +199,12 @@ function [c_src, c_snk] = Coalescence(y, params )
                 end
 
                 %Subtract bubbles from their original bins
-                c_snk(jind) = c_snk(jind) + c_jk * Nj * Nk;
-                c_snk(kind) = c_snk(kind) + c_jk * Nj * Nk;
+                if j == k
+                    c_snk(jind) = c_snk(jind) + 2*c_jk * Nj * Nk; 
+                else
+                    c_snk(jind) = c_snk(jind) + c_jk * Nj * Nk;
+                    c_snk(kind) = c_snk(kind) + c_jk * Nj * Nk; 
+                end
 
                 %
 
@@ -216,7 +255,7 @@ function [c_src, c_snk] = Coalescence(y, params )
 end
 
 
-function c_jk = Coalescence_Rate(y, j,k, zind, params, turb)
+function c_jk = Coalescence_Wang(y, j,k, zind, params, turb)
 
     %Define index to sample from for liquid properties
     i = (zind - 1) * params.Nms + 1;
@@ -258,11 +297,11 @@ function c_jk = Coalescence_Rate(y, j,k, zind, params, turb)
     %   Theoreetical prediction of flow regime ...
     u_bar_j = sqrt(2) .* (turb.eps(zind) .* dj).^(1/3); %Mean turbulent velocity 
     u_bar_k = sqrt(2) .* (turb.eps(zind) .* dk).^(1/3);
-    nj = Nj/params.mds(j);%dbds(j);
-    nk = Nk/params.mds(k); %dbds(k);  
+    nj = Nj/params.dbds(zind, j); %params.mds(j);%dbds(j); %CHECK CHECK CHECK
+    nk = Nk/params.dbds(zind, k); % params.mds(k); %dbds(k);  
     hb_jk = 6.3 .* (nj + nk).^(-1/3); 
-    lbt_j = sqrt(2) * (turb.eps(zind).*dj).^(1/3) .* ((dj/2).^2/turb.eps(zind)).^(1/3);
-    lbt_k = sqrt(2) * (turb.eps(zind).*dk).^(1/3) .* ((dk/2).^2/turb.eps(zind)).^(1/3);   
+    lbt_j = sqrt(2) * (turb.eps(zind).*dj).^(1/3) .* (((dj/2).^2)/turb.eps(zind)).^(1/3);
+    lbt_k = sqrt(2) * (turb.eps(zind).*dk).^(1/3) .* (((dk/2).^2)/turb.eps(zind)).^(1/3);   
     lbt_jk = sqrt(lbt_j^2 + lbt_k^2); %lbt_jk = sqrt( (0.89 .* dj).^2 + (0.89 .* dk).^2);
     gamma_jk = exp(-(hb_jk./lbt_jk).^6);
     omega_c = (pi./4) .* ((params.alpha_g_max)./(params.alpha_g_max - params.alpha_g(zind))) .* gamma_jk...
@@ -410,5 +449,18 @@ end
 function Coalescence_Wake
 
 
+
+end
+
+
+
+
+
+function c_jk = Coalescence_constant(y, j,k, zind, params, turb)
+
+    c_constant = params.coalesce.constant_rate; %Applies to all 
+    
+
+    c_jk = 0.5*c_constant;
 
 end

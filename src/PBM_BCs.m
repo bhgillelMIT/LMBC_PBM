@@ -1,18 +1,121 @@
-function [Nb_i, Fb_i] = PBM_BCs(reactor, mesh, inlet, disc, zs, rms, Vms, T_orifice, liquid, p_orifice, fsolve_opts)
+function [Nb_i, Fb_i] = PBM_BCs(reactor, mesh, inlet, disc, zs, rms, Vms, T_orifice, liquid, p_orifice, inputs, fsolve_opts)
+
+
+    debug = true;
 
     if disc.Nz == 1
 
         %Define initial distribution
+        u_spf = inputs.reactor.u_spf_orifice;
         L_o = zs(2)-zs(1);
         V_cell_o = reactor.Ac * L_o; %m^3 - Volume of boundary cell(s)
         ub_o = CalcVelocities(2.*rms, T_orifice, liquid, p_orifice, fsolve_opts);
         tres_o = L_o./ub_o; %s - time a bubble spends in cell
+        Vres_o = Vms*tres_o; %m3*s
+
         Fb_i = (1./(inlet.m.std_i .* sqrt(2.*pi))) .* exp(-0.5 .* ((rms - inlet.m.mu_i).^2)./(inlet.m.std_i.^2)); % # of bubbles/m3 - consider integration approach to  calculating
         Nb_i = V_cell_o .* Fb_i; %Initial number of bubbles of each size in the cell
+
+
         
+
+        %Calculate
+        if inputs.src.solve_alphag
+            
+            V_dot = sum(Nb_i .* Vms);
+            u_spf_o = V_dot/reactor.Ac;
+            Nb_scalar = u_spf/u_spf_o;
+            Nb_i = Nb_i .* Nb_scalar; Fb_i = Fb_i .* Nb_scalar;
+            V_ress = Nb_i .* Vms .* tres_o'; Vres = sum(V_ress);
+            alpha_g = Vres/V_cell_o;
+
+        else
+            alpha_g = inputs.src.alphag_manual;
+            V_res = V_cell_o * alpha_g;
+            V_res_nom = sum(Nb_i .* Vms);
+            V_res_scalar = V_res/V_res_nom;
+            Nb_i = Nb_i .* V_res_scalar; Fb_i = Fb_i .* V_res_scalar;
+
+        end
+
+
         %Normalize to have 1000 bubbles initially
-        Fb_i = 10/sum(Nb_i) .* Fb_i;
-        Nb_i = 10/sum(Nb_i) .* Nb_i;
+        %Fb_i = 10/sum(Nb_i) .* Fb_i;
+        %Nb_i = 10/sum(Nb_i) .* Nb_i;
+
+
+
+        %Analytical test cases 
+        if strcmp(inputs.src.coalesce_model, 'Scott_1968')
+            
+            %
+            v_bar = 2000 .* disc.V_min;
+            v0 = v_bar/2;
+            N0 = 10000;
+            d0 = 0.5 * v_bar;
+            vs = Vms;
+            vbs = disc.Vbs;
+            
+
+            F_func = @(v) (N0/v0) .* (v./v0) .* exp(-v./v0); %(N0/v0) .* (v./v0) .* exp(-v./v0);
+
+
+            %Calculate integrals
+            for i = 1:length(vs)
+                vb1 = vbs(i);
+                vb2 = vbs(i+1);
+                Fb_i(i) = integral(F_func, vb1, vb2);
+            end
+            %Fb_i = F_func(vs);
+
+            %Fb_i  =  (N0/v0) .* (vs./v0) .* exp(-vs./v0); %(N0/v0) .* exp(-vs./v0);
+        
+            Fb_i = Fb_i; Nb_i = V_cell_o*Fb_i;
+
+            %Plot the initial distribution
+            if debug
+                figure();
+                loglog(vs, Fb_i);
+                ylim([1E-15, 100]); xlim([disc.V_min, disc.V_max])
+            end
+
+
+
+        elseif strcmp(inputs.src.coalesce_model, 'Hounslow_1988')
+
+            %
+            v_bar = 2000 .* disc.V_min;
+            v0 = v_bar;
+            N0 = 1;
+            d0 = 0.5 * v_bar;
+            vs = Vms;
+            vbs = disc.Vbs;
+
+            F_func = @(v) (N0/v0) .* exp(-v./v0);%(N0/v0) .* (v./v0) .* exp(-v./v0);
+
+
+            %Calculate integrals
+            for i = 1:length(vs)
+                vb1 = vbs(i);
+                vb2 = vbs(i+1);
+                Fb_i(i) = integral(F_func, vb1, vb2);
+            end
+            %Fb_i = F_func(vs);
+
+            %Fb_i  =  (N0/v0) .* (vs./v0) .* exp(-vs./v0); %(N0/v0) .* exp(-vs./v0);
+        
+            Fb_i = Fb_i; Nb_i = V_cell_o*Fb_i;
+
+            %Plot the initial distribution
+            if debug
+                figure();
+                loglog(vs, Fb_i);
+                ylim([1E-15, 100]); xlim([disc.V_min, disc.V_max])
+            end
+
+        end
+
+        
         
 
     else

@@ -222,6 +222,7 @@ function outputs = TemperatureCharacteristics(params)
             end
             
             %Calculate initial conversion
+   
             [z_unique, unique_inds] = unique(trail.slowest.z);
             t_unique = trail.slowest.t(unique_inds);
             X_unique = trail.slowest.X(unique_inds);

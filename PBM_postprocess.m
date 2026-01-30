@@ -8,7 +8,7 @@ function results = PBM_postprocess(t, y, params)
 
     %Handle no inputs
     if nargin < 1
-        output = load('Data/Solutions/PBM_output_16-Dec-2025_15-58-33.mat');
+        output = load('Data/Solutions/PBM_output_05-Jan-2026_22-31-56.mat');
         output = output.output;
         t = output.T;
         y = output.Y;
@@ -58,6 +58,7 @@ function results = PBM_postprocess(t, y, params)
 
     %Limit analysis to final (approx. steady) state
     ts = t;
+    ts_init = t;
     t_ind = length(t);
     t = t(t_ind);
     y_t = y(t_ind, :);
@@ -164,7 +165,7 @@ function results = PBM_postprocess(t, y, params)
 
 
     %Log results
-    results.t = t; results.y = y;
+    results.t = ts_init; results.y = y;
     results.dbsout = dbsout;
     results.Vdot = Vdot;
     results.Vtot = Vtot;
@@ -174,6 +175,7 @@ function results = PBM_postprocess(t, y, params)
     results.mflux = mflux;
     results.mdists = mdists;
     results.mdists_norm = mdists_norm;
+    results.params = params;
     
 
 
@@ -287,26 +289,48 @@ function results = PBM_postprocess(t, y, params)
     %Single layer timeseries plot
     dt = mode(diff(ts));
     N_ts = length(ts);
-    N_plots = 6;
-    dN = round(N_ts/N_plots);
+    N_plots = 8;
+    dN = round((N_ts-1)/(N_plots-1));
     
     if params.sol.single_layer
+
         figure();
+
+        %Define colors
+        newcolors = [colors.navyblue;
+                     colors.trueblue;
+                     colors.H2blue;
+                     colors.ColumbiaBlue;
+                     colors.MITDarkGrey;
+                     colors.truered;
+                     colors.MITRed;
+                     colors.ChiliRed];
+        colororder(newcolors)
+
+        
         in = 1;
         ts_plot = [];
+        tstrs = {};
         for i = 1:N_plots
             ts_plot(end+1) = ts(in);
+            tstrs{i} = sprintf('t = %0.4f s', ts(in));
             y_plot = y(in,:);
             plot(dbsout(end,:), y_plot, 'LineWidth', lw); hold on;
             
 
     
             in = in + dN;
+            if in > length(ts)
+                in = length(ts);
+            end
 
         end
         xlabel('Diameter (m)'); ylabel('Numeric Density')
+        grid on; grid minor; axis square;
+        legend(tstrs{1}, tstrs{2}, tstrs{3}, tstrs{4}, tstrs{5}, tstrs{6}, tstrs{7}, tstrs{8});
+        set(gca, 'FontSize', fs, 'FontWeight', 'bold');
+        title('Single Layer - Timeseries')
         
-
     end
 
 

@@ -25,7 +25,7 @@ function inputs = PBM_inputs()
 
     %Simulation
     sol.src_delay = 0;
-    sim.t_end = 2;
+    sim.t_end = 3;
     
 
     %Geometry
@@ -56,9 +56,10 @@ function inputs = PBM_inputs()
     %Discretization
     mmesh.type = 'Hybrid'; %Type of mesh to use. Options: 'Linear', 'Geometric', 'Hybrid'
     mmesh.hybrid_cells_frac = 0.5;
+    mmesh.input = 'Radius'; %Options: 'Radius', 'Volume'
     disc.Nr = 1;
     disc.Nz = 10; 
-    disc.Nms = 30;
+    disc.Nms = 20;
     disc.Nrs = disc.Nms; % # of discrete volumes considered
     disc.mesh_hybrid_cells = round(disc.Nms .* mmesh.hybrid_cells_frac);  
     disc.r_min = 0.25 .* 0.001; %m - smallest size of bubble to consider
@@ -76,6 +77,12 @@ function inputs = PBM_inputs()
     src.eps_manual = 0.5;
     src.solve_alphag = false;
     src.alphag_manual = 0.154;
+    src.coalesce_model = 'Wang_2005'; %Options: 'Wang_2005', 'Scott_1968' 
+    src.breakage_model = 'Wang_2005'; 
+    src.coalesce_constant_rate = 1;
+    src.breakage_constant_rate = 1;
+    src.coalesce_active = true;
+    src.breakage_active = true;
 
     %Soler controls
     sol.type = 'direct';
@@ -89,7 +96,7 @@ function inputs = PBM_inputs()
     sol.disable_advection_t = 10;
     sol.single_layer = false;
     sol.orifice_BC_type = 2;
-    sol.break_file = 'break_tin_Nd-20_Nz-1_Ne-20_TL-1573.mat';
+    sol.break_file = 'break_tin_Nd-25_Nz-1_Ne-25_TL-1573.mat';
 
     %Boundary conditions
     inlet.m.mu_i = 0.003;

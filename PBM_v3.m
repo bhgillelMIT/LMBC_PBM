@@ -77,6 +77,7 @@ function results = PBM_v3(inputs)
     %Handle singler layer case
     [reactor, disc, sol] = PBM_singlelayer(reactor, disc, sol); %Adjust properties for case of a single cell
 
+    %Parse inputs
     
     
 
@@ -101,7 +102,7 @@ function results = PBM_v3(inputs)
     PBM_val.Fbs = zeros(1,disc.Nrs); % Bubble volume - Discrete quantities
     PBM_val.Ts.mu = initial.T; % Temperature - Mean
     PBM_val.Ts.std = 0; % Temperature - Standard deviation of distribution - replace with other parameters for method of moments
-    PBM_val.Xs.mu = 0; % Reaction extent
+    PBM_val.Xs.mu = 0; % Reaction extent - 
     PBM_val.Xs.std = 0; % Reaction extent - 
 
 %% Create a mesh
@@ -129,7 +130,7 @@ function results = PBM_v3(inputs)
     fprintf('-- Boundary Conditions (u_spf = %0.3f m/s). \n', reactor.u_spf_orifice)
 
     %Generate BCs
-    [Nb_i, Fb_i] = PBM_BCs(reactor, mesh, inlet,  disc, zs, mmesh.rms, mmesh.Vms, T_orifice, reactor.liquid, p_orifice, fsolve_opts);
+    [Nb_i, Fb_i] = PBM_BCs(reactor, mesh, inlet,  disc, zs, mmesh.rms, mmesh.Vms, T_orifice, reactor.liquid, p_orifice,  inputs, fsolve_opts);
 
     %Plot inlet bubble size distribution
     figure();
@@ -209,6 +210,7 @@ function results = PBM_v3(inputs)
     params.chars.N_Xis = 4;
     params.chars.dT_cutoff = 10; %K - threshold for merging temperature bins
     params.chars.dX_cutoff = 0.02; % percent - threshold for merging conversion bins
+    params.chars.unique_thresh = 0.0001;
 
     %Source term parameters
     params.src.debug = true;
@@ -220,8 +222,8 @@ function results = PBM_v3(inputs)
     
 
     %Coalescence parameters
-    params.coalesce.active = true;
-    params.coalesce.constant = true; %
+    params.coalesce.active = inputs.src.coalesce_active;
+    %params.coalesce.constant = true; %
     params.coalesce.eddy = true; %Eddy coalescence - true = enabled; false = disabled
     params.coalesce.wake = true; %Eddy coalescence - true = enabled; false = disabled
     params.coalesce.rise = true;
@@ -230,12 +232,14 @@ function results = PBM_v3(inputs)
     params.coalesce.constant_freq = 1; %Collisions per second
     params.coalesce.m_src = zeros(1, 10000);
     params.coalesce.m_snk = zeros(1, 10000);
+    params.coalesce.model = inputs.src.coalesce_model;
+    params.coalesce.constant_rate = inputs.src.coalesce_constant_rate;
 
     %Breakage parameters
-    params.break.active = true;
+    params.break.active = inputs.src.breakage_active;
     params.break.debug = false;
     params.break.eddy = true;
-    params.break.surf = false;
+    params.break.surf = true;
     params.break.damper = 1;
     params.break.b_star = 100; %Model parameter - Wang et al 2005
     params.break.m_star = 6.0; %Model parameter - 
@@ -247,6 +251,8 @@ function results = PBM_v3(inputs)
     params.break.bsub = NaN;
     params.break.m_src = zeros(1, 10000);
     params.break.m_snk = zeros(1, 10000);
+    params.break.model = inputs.src.breakage_model;
+    params.break.constant_rate = inputs.src.breakage_constant_rate;
 
 
     %Heat transfer parameters
@@ -300,12 +306,13 @@ function results = PBM_v3(inputs)
     params.dbs = 2 .* params.rbs;
     params.dms = 2 .*  params.rms;
     params.dbds = diff(params.dbs);
-    params.Vms = (4/3) .* pi .* params.rms.^3;
+    params.Vms = mmesh.Vms; %(4/3) .* pi .* params.rms.^3;
     params.Nms = disc.Nms;
     params.mbs = mmesh.mbs;
     params.mds = diff(mmesh.mbs); %spacing of mass brackets
     params.mms = mmesh.mms;
     params.nms = mmesh.nms; %mols - number of moles originally
+    params.nbs = mmesh.nbs;
     params.alpha_g = zeros(1, params.Nz);
     params.Vcells = reactor.Ac .* diff(params.mesh.yy(:,1));
     params.p_surf = reactor.p_surf;
@@ -396,7 +403,7 @@ function results = PBM_v3(inputs)
     params = LoadTempChars(params);
 
     %Create initial "volumes"
-    [y0, params, N_volumes] = InitializeVolumes(params, mesh, disc);
+    [y0, params, N_volumes] = InitializeVolumes(params, mesh, disc, Fb_i);
     %N_volumes = mesh.N_cells .* disc.Nms;
     % params.cellinds = repmat([1:mesh.N_cells], disc.Nms, 1); params.cellinds = params.cellinds(:); %Specifies which spatial cell the volume maps to
     % params.xinds = repmat([1:disc.Nms]', mesh.N_cells, 1);
@@ -432,12 +439,15 @@ function results = PBM_v3(inputs)
     params.d_mu = zeros(size(params.T_mu));
     params.uz_mu = zeros(size(params.T_mu));
     params.V_mu = zeros(size(params.T_mu));
+    params.Vb_mu = zeros(size(params.rbs));
     params.n_mu = params.V_mu;
+    params.nb_mu = params.Vb_mu;
+    params.db_mu = params.Vb_mu;
     params.ug = zeros(params.Nz, 1);
 
 
     %Breakage parameters
-    params.break.delta = 1E-8;
+    params.break.delta = 0.01;
     params.break.N_lambdas = 300; %Number of eddy diameters to use for integration in eddy breakage calculations                                                                         
     params.break.dfv_surf = 0.025; %Resolution of breakup fraction (fv) at larger sizes
     params.break.dfv_mid = 0.01; %Resolution of breakup fration for intermediate sizes
@@ -450,7 +460,7 @@ function results = PBM_v3(inputs)
                        (params.break.fv_thresh_hi+params.break.dfv_surf):params.break.dfv_surf:0.5]; %Normal breakup fraction values to interpolate results onto and to do subsequent integration with
     params.fvs_norm_all = [params.fvs_norm, 1 - fliplr(params.fvs_norm(1:end-1))]; %Full spectrum
     params.Pbs_norm = zeros(params.break.N_lambdas, length(params.fvs_norm)); %
-    params.break.lambda_rats = linspace(1E-6,1, 300);
+    params.break.lambda_rats = linspace(1E-6,1, params.break.N_lambdas);
     params.fvc_func = Calculatefvcfunc(params.break.lambda_rats);
     params.break.bfd_zero = zeros(size(params.fvs_norm));
     params.break.fvih_saveoutput = true;
@@ -461,12 +471,12 @@ function results = PBM_v3(inputs)
     params.break.interp = true;
     params.break.eps_range = [0, 5];
     params.break.d_range = [1E-5, 0.05];
-    params.break.N_u_spfs = 20;
+    params.break.N_u_spfs = 25;
     params.break.N_d_interp = 2;
-    params.break.N_eps_interp = 3;
+    params.break.N_eps_interp = 2;
    % params.break.N_lambdas = 50;
     params.break.N_eps = params.break.N_u_spfs;
-    params.break.N_ds = 20; %1.*params.Nms;
+    params.break.N_ds = 25; %1.*params.Nms;
     params.break.filename = sol.break_file;
     params = LoadBreakFile(params);
     
@@ -733,14 +743,17 @@ function params = IdentifyCoalescencePartners(params)
 
         %Pull cell value
 
+        %Identify max index to test 
+        max_ind = xind; 
+
     
         %Iterate through all possible size combinations
         coalesce_partners = [];
         eta_ijk = [];
         bias = [];
         overrat = [];
-        for j = 1:params.Nms
-            for k = j:params.Nms
+        for j = 1:max_ind
+            for k = j:max_ind
                
                 %Determine 
                 mmj = params.mms(j);
@@ -1267,6 +1280,7 @@ end
 function params = LoadTempChars(params)
 
     if params.heat.active 
+        fprintf('-- Generating Characteristics.\n')
         if strcmp(params.chars.type, 'LC')
     
             if params.chars.load

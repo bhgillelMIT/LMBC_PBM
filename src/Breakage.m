@@ -204,7 +204,7 @@ function [b_src, b_snk] = Breakage(y, params)
                     end
     
                     %Add to source term
-                    b_src(sind) = b_src(sind) + zetas(is) .* b_eddy + b_surf; % 1/(im-1) *
+                    b_src(sind) = b_src(sind) + zetas(is) .* b_eddy + b_surf .* 1/(im-1); % 1/(im-1) * %UPDATE UPDATE UPDATE
                     
                 
 
@@ -629,6 +629,10 @@ function b_eddy = BreakageEddySimple(iz, im, d, Ns_cell, beta_ratio, beta_eddy, 
         fprintf('-Eddy Breakage: iz = %i; im = %i; d = %0.5f m; m_i = %0.3e;\n', iz, im, d, params.mms(im));
         x = 1;
     end
+
+    %Normalize beta_eddy
+    beta_eddy_int = trapz(params.fvs_norm_all);
+    beta_eddy = beta_eddy./beta_eddy_int;
 
     %Track iterations
     it_total = 1;

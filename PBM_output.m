@@ -26,7 +26,7 @@ function status = PBM_output(t, y, flag)
 
     %Calculate mass and record
     if ~strcmp(flag, 'done')
-        params.m_total(params.its+1) = sum(params.mms_rep .* y .* params.Vcells_rep);
+        params.m_total(params.its+1) = sum(params.mms_rep .* y(:,end) .* params.Vcells_rep);
     end
     
 

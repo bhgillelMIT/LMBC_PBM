@@ -86,17 +86,17 @@ function dydt = PBM_ode(t,y, params)
 
 
         %Calcualte bubble velocity
-
+        
         
         %Identify the index of the matching cell upstream
         if zind > 1
 
             %Identify upstream T index
             merged = params.T_z.chars.merged{xind};
-            T_match 
+            T_match = merged.bins_in(:,zind) == Tind; %Need to handle multiple incoming cells
 
 
-
+            %Identify other upstream indices
             zmatch = params.zinds == (zind-1);
             xmatch = params.xinds == xind;
             Tmatch = 1;%Complicated by merging 
@@ -159,7 +159,7 @@ function dydt = PBM_ode(t,y, params)
         badd = cadd; bsub = cadd;
         if params.coalesce.active
             [cadd, csub] = Coalescence(Fs, params );  
-            cadd = cadd * params.coalesce.damper;
+            cadd = cadd * params.coalesce.damper; %Damper is only used for debugging
             csub = csub * params.coalesce.damper;
         end
         if params.break.active

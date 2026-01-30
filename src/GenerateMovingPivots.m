@@ -117,6 +117,9 @@ end
 %A function to identify the max separation between the 
 function trail = DetermineMaxDomain(params)
 
+    %Constant 
+
+
     %Physical constants
     R = 8.3145;
 
@@ -169,10 +172,10 @@ function trail = DetermineMaxDomain(params)
     slowest.X_end = max(slowest.X);
     slowest.T_diff_end = params.T_liq - slowest.T_end;
     slowest.X_diff_end = 1 - slowest.X_end;
-    [slowest.z_unique, unique_inds_z] = unique(slowest.z);
+    [slowest.z_unique, unique_inds_z] = unique_diff(slowest.z, params.chars.unique_thresh);%unique(slowest.z);
     slowest.T_unique = slowest.T(unique_inds_z); %NEED TO USE THIS FOR UNIQUE
     slowest.t_unique = slowest.t(unique_inds_z);
-    [slowest.T_unique, unique_inds_T] = unique(slowest.T_unique);
+    [slowest.T_unique, unique_inds_T] = unique_diff(slowest.T_unique, params.chars.unique_thresh);
     slowest.z_unique = slowest.z_unique(unique_inds_T);
     slowest.z_unique(end) = params.reactor.H;
     slowest.t_end = slowest.t_unique(end);

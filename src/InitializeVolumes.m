@@ -1,4 +1,4 @@
-function [y0, params, N_volumes_total] = InitializeVolumes(params, mesh, disc)
+function [y0, params, N_volumes_total] = InitializeVolumes(params, mesh, disc, Fb_i)
 
 %% Setupp
 
@@ -232,7 +232,9 @@ function [y0, params, N_volumes_total] = InitializeVolumes(params, mesh, disc)
 
 
     %Pull merged 
-    chars = params.T_z.chars;
+    if params.heat.active
+        chars = params.T_z.chars;
+    end
 
 
     N_volumes_total = 0;
@@ -378,7 +380,7 @@ function [y0, params, N_volumes_total] = InitializeVolumes(params, mesh, disc)
     end
 
     %Create storage vector 
-    y0 = zeros(N_volumes_total, 1);
+    %y0 = zeros(N_volumes_total, 1);
 
     %Specify initial values
     

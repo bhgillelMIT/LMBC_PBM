@@ -123,21 +123,23 @@ function params = CalculateBSDs(params)
         
         
                     %Iterate through possible epsilons
+                    paramsin = params;
+                    N_lambdas = params.break.N_lambdas;
                     for ie2 = 1:length(turb_epss)
             
                         %Pull epsilon
                         turb_eps = turb_epss(ie2);
-                        params.turb.eps(:) = turb_eps;
+                        paramsin.turb.eps(:) = turb_eps;
             
                         %Calculate kolmogorov length scale
-                        lambda_komogorov = ((params.nus.^3)./(turb_eps+1E-8)).^0.25; %m
+                        lambda_komogorov = ((paramsin.nus.^3)./(turb_eps+1E-8)).^0.25; %m
                         lambda_min = 31.4 * lambda_komogorov; %Minimum eddy diameter to break a bubble - integrate up to bubble diameter 
         
                         %Calculate minimum lambda for breakage
                         
             
                         %Calculate breakage rate and BSD
-                        [b_eddy, beta, int_ratio] = BreakageEddyAlt(iz, id, d, Ns_cell, lambda_min, params.break.N_lambdas, params);
+                        [b_eddy, beta, int_ratio] = BreakageEddyAlt(iz, id, d, Ns_cell, lambda_min, N_lambdas, paramsin);
         
                         %Store results
                         bs_ints_ratio(id, ie2) = int_ratio;
@@ -155,12 +157,11 @@ function params = CalculateBSDs(params)
         
 
                 if id1 == 1 & ie == 1
-
                     ds_mg_inds = ds_inds(id1):1:ds_inds(id1+1);
-                    epss_mg_inds = epss_inds(ie):1:epss_inds(ie+1);
-
-                    
+                    epss_mg_inds = epss_inds(ie):1:epss_inds(ie+1);        
                 else
+                    ds_mg_inds = ds_inds(id1):1:ds_inds(id1+1);
+                    epss_mg_inds = epss_inds(ie):1:epss_inds(ie+1); 
 
                     x = 1;
                 end

@@ -83,7 +83,20 @@ function [b_eddy, beta, int_ratio] = BreakageEddyAlt(iz, im, d, Ns_cell, lambda_
 
         %Determine normalized daughter bubble size distribution
         beta = (b_fvd)./(b_eddy);
-        beta = [beta, fliplr(beta(1:end-1))];
+
+        %Handle NaNs
+        if any(isnan(beta))
+            beta = zeros(size(beta));
+        end
+
+        %Extrapolate to fill in center value
+        try
+            interp_func = @(fv) interp1(params.fvs_norm(1:end-1), beta(1:end-1), fv, 'spline');
+            beta(end) = interp_func(0.5);
+            beta = [beta, fliplr(beta(1:end-1))];
+        catch
+            x = 1;
+        end
 
         %Handle NaNs
         if any(isnan(beta))

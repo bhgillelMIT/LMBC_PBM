@@ -188,7 +188,7 @@ function  [T,Y] = PBM_solver(tspan, y0, params, options, varargin)
             %Print update
             fprintf('PBM - Using Direct Solver (ode45).\n\n');
 
-            [T,Y] = ode45(@(t,y) PBM_ode(t,y,params), tspan, y0, ode45opts);
+            [T,Y] = ode15s(@(t,y) PBM_ode(t,y,params), tspan, y0, ode15opts);
            
 
 

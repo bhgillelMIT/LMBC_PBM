@@ -19,6 +19,7 @@ function BreakageTest(params)
     alpha = 0.05;
 
     %Fill params.alpha_g
+    Ns_cell = ones(size(params.cellinds));
     params.alpha_g = alpha .* ones(params.Nz, 1);
     iz = 1;
     
@@ -35,7 +36,7 @@ function BreakageTest(params)
             %Calculate quantities
              [beta_eddy, beta_ratio] = BreakageInterpolate(d, eps, iz, params);
 
-
+            
             %beta_ratio = params.break.beta_ratio{1}(d, eps);
                 %b_eddy = params.break.b_eddy{iz}(d, params.turb.eps(iz));
             %beta_eddy = params.break.beta{1}(d, eps, params.fvs_norm_all);
@@ -57,7 +58,7 @@ function BreakageTest(params)
 
 
     %Plot results
-    figure('Name', 'Breakage Tests', 'Units', 'normalized', 'Outerposition', [0 0 1 1]);
+    %figure('Name', 'Breakage Tests', 'Units', 'normalized', 'Outerposition', [0 0 1 1]);
 
     subplot(1,2,1);
     plot(ds, bd_norm(1,:), 'k-','LineWidth', lw, 'Color', colors.trueblue); hold on;
@@ -75,7 +76,8 @@ function BreakageTest(params)
 %% BSD Tests
 
     %Test cases
-    subplot(1,2,2);
+    %subplot(1,2,2);
+    figure();
     eps_ref = 1;
     ds_ref = [0.0015, 0.002, 0.003, 0.006];
     BSDs = zeros(length(ds_ref), length(params.fvs_norm_all));
@@ -88,9 +90,18 @@ function BreakageTest(params)
         BSDs(it_debug,:) = beta_eddy;
         %Renormalize interpolated value
 
-
         %Plot
+        subplot(1,2,1);
         plot(params.fvs_norm_all, BSDs(it_debug,:), 'LineWidth', 1.5); hold on;
+
+        % %Calculate manually
+        % turb_eps = eps_ref;
+        % params.turb.eps(:) = turb_eps;
+        % lambda_komogorov = ((params.nus.^3)./(turb_eps+1E-8)).^0.25; %m
+        % lambda_min = 31.4 * lambda_komogorov; %Minimum eddy diameter to break a bubble - integrate up to bubble diameter 
+        % [b_eddy, beta, int_ratio] = BreakageEddyAlt(iz, id, d, Ns_cell, lambda_min, params.break.N_lambdas, params);
+        % subplot(1,2,2);
+        % plot(params.fvs_norm_all, beta, 'LineWidth', 1.5); hold on;
 
     end
 
@@ -106,7 +117,8 @@ function BreakageTest(params)
     %Review and close
     %close;
 
-
+    %Pause to render figure
+    pause(1);
 
 
 
@@ -164,5 +176,8 @@ function b_eddy = BreakageEddySimple(iz, im, d, Ns_cell, beta_ratio, beta_eddy, 
         % close
         fprintf('-- Eddy Breakage time = %0.8f; Total its = %d; \n', t_req, it_total)
    end
+
+
+    
 
 end
