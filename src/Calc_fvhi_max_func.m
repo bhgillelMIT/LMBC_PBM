@@ -19,7 +19,7 @@ function fv_ih_max_funcs = Calc_fvhi_max_func(params)
     %Calculate range of lambdas
     u_spfs = linspace(params.u_spfs(1), params.u_spfs(2), 20);
     turb_eps = u_spfs .* params.g;
-    nus = repmat(params.nus, 1, length(turb_eps));
+    nus = repmat(params.nus(:), 1, length(turb_eps));
     turb_eps = repmat(turb_eps, params.Nz, 1);
     lambda_komogorov = ((nus.^3)./turb_eps).^0.25; %m
     lambda_min = 31.4 * min(lambda_komogorov(:));

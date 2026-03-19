@@ -30,11 +30,21 @@ function [Nb_i, Fb_i] = PBM_BCs(reactor, mesh, inlet, disc, zs, rms, Vms, T_orif
             alpha_g = Vres/V_cell_o;
 
         else
+
+            %Scale 
             alpha_g = inputs.src.alphag_manual;
-            V_res = V_cell_o * alpha_g;
+            V_res = V_cell_o * alpha_g; %m3 - Gas volume
             V_res_nom = sum(Nb_i .* Vms);
             V_res_scalar = V_res/V_res_nom;
             Nb_i = Nb_i .* V_res_scalar; Fb_i = Fb_i .* V_res_scalar;
+
+            %Test the volume
+            Vs = Nb_i .* Vms;
+            V_tot = sum(Vs);
+            V_cumsum = cumsum(Vs);
+            
+
+
 
         end
 
@@ -51,7 +61,7 @@ function [Nb_i, Fb_i] = PBM_BCs(reactor, mesh, inlet, disc, zs, rms, Vms, T_orif
             %
             v_bar = 2000 .* disc.V_min;
             v0 = v_bar/2;
-            N0 = 10000;
+            N0 = 1;
             d0 = 0.5 * v_bar;
             vs = Vms;
             vbs = disc.Vbs;
@@ -112,6 +122,14 @@ function [Nb_i, Fb_i] = PBM_BCs(reactor, mesh, inlet, disc, zs, rms, Vms, T_orif
                 loglog(vs, Fb_i);
                 ylim([1E-15, 100]); xlim([disc.V_min, disc.V_max])
             end
+
+        elseif strcmp(inputs.src.breakage_model, 'Uniform_Binary')
+            
+            Fb_i = zeros(size(Fb_i));
+            [nearestval, nearestind] = min(abs(Vms - 1));
+            Fb_i(nearestind) = 1/(disc.Vbs(nearestind+1) - disc.Vbs(nearestind));
+
+
 
         end
 

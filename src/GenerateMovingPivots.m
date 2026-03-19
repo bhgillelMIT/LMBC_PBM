@@ -98,9 +98,9 @@ function gparams = GenerateMovingPivots(gparams, params)
     gparams.lead.engaged = true(size(gparams.lead.Fps));
 
     %Define all pivots
-    gparams.Fps = [gparams.trail.Fps, gparams.core.Fps, gparams.lead.Fps];
-    gparams.Tms = [];
+    gparams.Fps = [gparams.trail.Fps, gparams.core.Fps, gparams.lead.Fps];    
     gparams.Tps = [gparams.trail.Tps, gparams.core.Tps, gparams.lead.Tps];
+    gparams.Tms = gparams.Tps(1:end-1) + diff(gparams.Tps)./2;
     gparams.engaged = [gparams.trail.engaged, gparams.core.engaged, gparams.lead.engaged];
 
     %Count
@@ -108,7 +108,16 @@ function gparams = GenerateMovingPivots(gparams, params)
     gparams.N_Ts = length(gparams.Tps);
     gparams.N_Fs = length(gparams.Fps);
 
-    
+    %Calculate numeric densities
+    Tms = [gparams.core.Tps, gparams.lead.Tps, gparams.T_liq];
+    dist_func = @(T) 1./(T_std .* sqrt(2.*pi)) .* exp(-0.5 .* ((T - gparams.T_mu).^2)./(gparams.T_std^2));
+    Fracs = zeros(1, length(Tms)-1);
+    for it = 1:length(Fracs)
+        Fracs(it) = integral(dist_func, Tms(it), Tms(it+1));
+    end
+    Fracs_trail = zeros(1,(length(gparams.trail.Tps)));
+    gparams.Fracs = [Fracs_trail, Fracs];
+
 
 
 end

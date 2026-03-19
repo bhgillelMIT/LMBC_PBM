@@ -1,4 +1,4 @@
-function [b_src, b_snk] = Breakage(y, params)
+function [b_src, b_snk, b_mats] = Breakage(y, params)
 
     %Make parameters global
     global params
@@ -20,6 +20,7 @@ function [b_src, b_snk] = Breakage(y, params)
 
     %Pull values and allocate output vectors
     b_src = zeros(size(y)); b_snk = b_src;
+    b_mats = cell(params.Nz, 1);
     
 
     %Calculate kolmogorov length scale
@@ -51,6 +52,7 @@ function [b_src, b_snk] = Breakage(y, params)
 
         %Create storage matrix
         bs = zeros(params.Nms, params.Nms); %Row = bubble breaking, column = bubble receiving
+        b_mat = zeros(params.Nms);
 
 
         %VARY RESOLUTION OF fvs norm based on the number of size groups
@@ -68,62 +70,83 @@ function [b_src, b_snk] = Breakage(y, params)
             ni = params.nms(im);
             V = (ni .* (1 + params.X_mu(iz, im)) .* params.R .* params.T_mu(iz,im))./params.p_func(z);
             d = (6.*V/pi).^(1/3);
-            u = params.ubs.funcs{iz}(d); %params.uzs(cellinds(im));
+            %u = params.ubs.funcs{iz}(d); %params.uzs(cellinds(im));
             
             %Eddy Breakage
             if params.break.eddy
-                if params.break.interp %Solve using interpolation
-                    if any(~isreal(params.turb.eps(iz)))
-                        x = 1;
-                    end
+                switch params.break.model
+                    case 'Luo_Svendson_1996'
+                        [b_eddy, beta_eddy] = BreakageLuoSvendson(iz, im, d, Ns_cell, lambda_min, params.break.N_lambdas, params);
+                        beta_eddy = beta_eddy./2;
+                        %[beta_wang, beta_ratio, ~] = BreakageInterpolate(d, params.turb.eps(iz), iz, params);
+                        %beta_eddy = beta_wang./trapz(params.fvs_norm_all, beta_wang);
 
-                     ts = cputime; 
+                    case 'Wang_2005'
 
 
-                    [beta_eddy, beta_ratio] = BreakageInterpolate(d, params.turb.eps(iz), iz, params);
+                        if params.break.interp %Solve using interpolation
+                            if any(~isreal(params.turb.eps(iz)))
+                                x = 1;
+                            end
+        
+                             ts = cputime; 
+        
+        
+                            [beta_eddy, beta_ratio, b_eddy] = BreakageInterpolate(d, params.turb.eps(iz), iz, params);
+        
+                            % %if params.sol.solve_details
+                            % beta_ratio = params.break.beta_ratio{iz}(d, params.turb.eps(iz));
+                            %     %b_eddy = params.break.b_eddy{iz}(d, params.turb.eps(iz));
+                            % 
+                            % tm  = cputime;
+                            % tmd = tm - ts;
+        
+                            
+                            % 
+                            % beta_eddy = params.break.beta{iz}(d, params.turb.eps(iz), params.fvs_norm_all);
+                            % beta_eddy = beta_eddy(:);
+                            if any(isnan(beta_eddy))
+                                beta_eddy = zeros(size(beta_eddy));
+                                beta_ratio = 0;
+                            end
+        
+                            %Log result 
+                            params.break.beta_eddy_last = beta_eddy;
+                            params.break.beta_ratio_last = beta_ratio;
+                            % 
+                            % 
+                            %   te = cputime;
+                            % td = te - ts;
+                           % else
+                            %    beta_eddy = params.break.beta_eddy_last;
+                            %    beta_ratio = params.break.beta_ratio_last;
+                           % end
+        
+                            % if td > 1E-8
+                            %     x =1;
+                            % end
 
-                    % %if params.sol.solve_details
-                    % beta_ratio = params.break.beta_ratio{iz}(d, params.turb.eps(iz));
-                    %     %b_eddy = params.break.b_eddy{iz}(d, params.turb.eps(iz));
-                    % 
-                    % tm  = cputime;
-                    % tmd = tm - ts;
+                            b_eddy = BreakageEddySimple(iz, im, d, Ns_cell, beta_ratio, beta_eddy, params);
 
-                    
-                    % 
-                    % beta_eddy = params.break.beta{iz}(d, params.turb.eps(iz), params.fvs_norm_all);
-                    % beta_eddy = beta_eddy(:);
-                    if any(isnan(beta_eddy))
-                        beta_eddy = zeros(size(beta_eddy));
-                        beta_ratio = 0;
-                    end
 
-                    %Log result 
-                    params.break.beta_eddy_last = beta_eddy;
-                    params.break.beta_ratio_last = beta_ratio;
-                    % 
-                    % 
-                    %   te = cputime;
-                    % td = te - ts;
-                   % else
-                    %    beta_eddy = params.break.beta_eddy_last;
-                    %    beta_ratio = params.break.beta_ratio_last;
-                   % end
+                        else %Solve in real time
+                            [b_eddy, beta_eddy] = BreakageEddyAlt(iz, im, d, Ns_cell, lambda_min, params.N_lambdas, params); %b_eddy = breakage rate of the size; beta_eddy = distribution of bubble sizes
+                        end
+                    case 'Uniform_Binary'
+                        [b_eddy, beta_eddy] = BreakageEddyUniformBinary(iz, im, d, Ns_cell, params);
 
-                    % if td > 1E-8
-                    %     x =1;
-                    % end
+                    otherwise
+                        error('Invalid Breakage Model.')
 
-                    b_eddy = BreakageEddySimple(iz, im, d, Ns_cell, beta_ratio, beta_eddy, params);
-                else %Solve in real time
-                    [b_eddy, beta_eddy] = BreakageEddyAlt(iz, im, d, Ns_cell, lambda_min, params.N_lambdas, params); %b_eddy = breakage rate of the size; beta_eddy = distribution of bubble sizes
                 end
             end
-
-            if strcmp(params.break.type, 'uniform')
-                beta_eddy_orig = beta_eddy;
-                beta_eddy = ones(size(beta_eddy));
-            end
+            % 
+            % %
+            % % 
+            % if strcmp(params.break.model, 'Uniform_Binary')
+            %     beta_eddy_orig = beta_eddy;
+            %     beta_eddy = ones(size(beta_eddy));
+            % end
 
             %Inertia Breakage - Bubble too large
             if params.break.surf
@@ -141,21 +164,34 @@ function [b_src, b_snk] = Breakage(y, params)
             %Log BSD
             betas(im-1, :) = beta_eddy;
 
+            if b_eddy > 0
+                x = 1;
+            end
+
             %SOURCE TERM --------------------------------------------------
+            b_eddy = b_eddy * Ns_cell(im);
             b_surf = b_surf .* Ns_cell(im);
             b_total = b_eddy + b_surf;
 
+            if b_surf > 0
+                x = 1;
+            end
 
             %Only consider if breakage rate is above a threshold
-            if b_total > 1E-6
-
-
+            if b_total > 1E-6 
 
                 %Calculate distribution of products
-                ms_norm = mi * [params.fvs_norm, 1 - fliplr(params.fvs_norm(1:end-1))];
+                ms_norm = mi * params.fvs_norm_all;
                 ms_max = max(ms_norm);
                     %ds_norm = (d.^3 .* params.fvs_norm).^(1/3); %Can calculate and list as a matrix with N_fvs columns, and Nms rows 
                 zetas = zeros(1,im);
+
+                %Create interpolation function
+                %beta_func = @(m) (1/ms_max) .* interp1(ms_norm, beta_eddy, m); %Normalized to mass - CHECK THIS TO SOLVE MASS BALANCE ISSUE
+                %beta_func = @(m) interp1(ms_norm, beta_eddy, m);
+                beta_func = @(m) (1/mi) .* interp1(ms_norm, beta_eddy, m);
+                beta_func_int = integral(beta_func, 0, mi);
+                beta_func = @(m) 2/beta_func_int .* beta_func(m);
     
                 %Iterate through smaller brackets
                 for is = 1:im %Only consider sizes smaller than 
@@ -166,11 +202,7 @@ function [b_src, b_snk] = Breakage(y, params)
                     %Pull cellind
                     sind = cellinds(is); %source index
     
-                    %Create interpolation function
-                    %beta_func = @(m) (1/ms_max) .* interp1(ms_norm, beta_eddy, m); %Normalized to mass - CHECK THIS TO SOLVE MASS BALANCE ISSUE
-                    beta_func = @(m) (1/mi) .* interp1(ms_norm, beta_eddy, m);
-                    beta_func_int = integral(beta_func, 0, mi);
-                    beta_func = @(m) 2/beta_func_int .* beta_func(m);
+                    
 
 
                     %Specify representative masses of adjacent cells (with
@@ -193,7 +225,8 @@ function [b_src, b_snk] = Breakage(y, params)
                         int_func_down = @(m) (m - 0)./(m_mid) .* beta_func(m); %Will conserve mass, but not number of bubbles since there is no lower bracket
                         zetas(is) = integral(int_func_up, m_mid, m_hig) + integral(int_func_down, 0, m_mid);
                     elseif is == params.Nms
-                        x = 1;
+                        int_func_down =  @(m) (m - m_low)./(m_mid - m_low) .* beta_func(m);
+                        zetas(is) = integral(int_func_down, m_low, m_mid); %Don't consider up direction since bubbles cannot be larger;
                     elseif is == im 
                         int_func_down =  @(m) (m - m_low)./(m_mid - m_low) .* beta_func(m);
                         zetas(is) = integral(int_func_down, m_low, m_mid); %Don't consider up direction since bubbles cannot be larger;
@@ -204,12 +237,44 @@ function [b_src, b_snk] = Breakage(y, params)
                     end
     
                     %Add to source term
-                    b_src(sind) = b_src(sind) + zetas(is) .* b_eddy + b_surf .* 1/(im-1); % 1/(im-1) * %UPDATE UPDATE UPDATE
+                    b_src_s = zetas(is) .* b_eddy + b_surf .* 1/(im-1);
+                    b_src(sind) = b_src(sind) + b_src_s; % 1/(im-1) * %UPDATE UPDATE UPDATE
                     
-                
-
+                    %Store 
+                    b_mat(im, is) = b_mat(im, is) + b_src_s;
+                    
 
                 end
+
+
+            elseif strcmp(params.break.model, 'Equal_Binary') && b_total > 1E-6
+                
+                %Identify bins to split the new bubbles between
+                m_break = mi/2;
+                ind_lower = max(find(params.mms < m_break));
+                ind_upper = min(find(params.mms >= m_break));
+
+                %Handle case for smallest bin
+                if isempty(ind_lower)
+                    m_ratio = params.mms(1)/m_break;
+                    eta_lower = 1/m_ratio;
+                    eta_upper = 0;
+
+                else
+                    eta_lower = (params.mms(ind_upper) - m_break)/(params.mms(ind_upper) - params.mms(ind_lower));
+                    eta_upper = 1 - eta_lower;
+         
+                end
+
+                %Allocate bubble
+                b_src(ind_lower) = eta_lower * 2 * b_eddy;
+                b_src(ind_upper) = eta_upper * 2 * b_eddy;
+
+                
+                x = 1;
+
+                
+
 
 
             end
@@ -217,6 +282,7 @@ function [b_src, b_snk] = Breakage(y, params)
             %SINK TERM ----------------------------------------------------
             b_snk(mind) = b_total;
 
+            
            
 
             % if sum(m_src) > 0
@@ -227,8 +293,12 @@ function [b_src, b_snk] = Breakage(y, params)
 
          %Check mass conservation and rescale 
         if params.src.debug
-            params.break.m_src(params.src.its) = sum(b_src .* [repmat(params.mms, 1, params.Nz)]'); %Derived from the distribution equations
-            params.break.m_snk(params.src.its) = sum(b_snk .* [repmat(params.mms, 1, params.Nz)]'); %Calculated
+            params.break.m_src(params.src.its) = sum(b_src .* [repmat(params.mms, 1, params.Nz)]); %params.mms_rep); %[repmat(params.mms, 1, params.Nz)]'); %Derived from the distribution equations
+            params.break.m_snk(params.src.its) = sum(b_snk .* [repmat(params.mms, 1, params.Nz)]); %params.mms_rep); %[repmat(params.mms, 1, params.Nz)]'); %Calculated
+                
+            %Normalize distributions
+            b_src = (params.break.m_snk(params.src.its)./(params.break.m_src(params.src.its) + 1E-16)) .* b_src;
+        
         end
 
         %Debug plots
@@ -262,6 +332,9 @@ function [b_src, b_snk] = Breakage(y, params)
 
 
         end
+
+        %Store source matrix
+        b_mats{iz} = b_mat;
 
     end
 
@@ -630,8 +703,12 @@ function b_eddy = BreakageEddySimple(iz, im, d, Ns_cell, beta_ratio, beta_eddy, 
         x = 1;
     end
 
+    if beta_ratio > 0
+        x = 1;
+    end
+
     %Normalize beta_eddy
-    beta_eddy_int = trapz(params.fvs_norm_all);
+    beta_eddy_int = trapz(params.fvs_norm_all, beta_eddy);
     beta_eddy = beta_eddy./beta_eddy_int;
 
     %Track iterations
@@ -640,7 +717,7 @@ function b_eddy = BreakageEddySimple(iz, im, d, Ns_cell, beta_ratio, beta_eddy, 
     %Calculate integral
     b_fvd = params.break.bfd_zero;
     int_lambda_fvs = beta_ratio .* beta_eddy(1:length(params.fvs_norm));
-    b_fvd = 0.923 .* (1 - params.alpha_g(iz)) .* Ns_cell(im) .* params.turb.eps(iz).^(1/3)  .* int_lambda_fvs;
+    b_fvd = 0.923 .* (1 - params.alpha_g(iz))  .* params.turb.eps(iz).^(1/3)  .* int_lambda_fvs; %.* Ns_cell(im)
 
     % for iv = 2:length(params.fvs_norm)
     % 
@@ -652,6 +729,10 @@ function b_eddy = BreakageEddySimple(iz, im, d, Ns_cell, beta_ratio, beta_eddy, 
     %     it_total = it_total + 1;
     % 
     % end
+
+    if any(b_fvd > 0)
+        x = 1;
+    end
 
     %Calculate overall rate
     switch params.break.int_method
@@ -665,6 +746,10 @@ function b_eddy = BreakageEddySimple(iz, im, d, Ns_cell, beta_ratio, beta_eddy, 
             b_eddy = trapz(params.fvs_norm, b_fvd);
     end
 
+    if b_eddy > 0
+        x = 1;
+    end
+
     %Debug plot
     if params.break.debug
         t_end = cputime;
@@ -674,5 +759,26 @@ function b_eddy = BreakageEddySimple(iz, im, d, Ns_cell, beta_ratio, beta_eddy, 
         % close
         fprintf('-- Eddy Breakage time = %0.8f; Total its = %d; \n', t_req, it_total)
    end
+
+end
+
+
+
+function [b_eddy, beta] = BreakageEddyUniformBinary(iz, im, d, Ns_cell, params)
+
+    %Pull constant breakage rate
+    b0 = params.break.constant_rate;
+
+    %Calculate breakage rate
+    b_eddy = b0 * (params.mms(im).^2) .* Ns_cell(im);
+
+    %Define beta
+    %beta = 2./params.mms(im) .* ones(size(params.fvs_norm_all));
+    beta = ones(size(params.fvs_norm_all));
+    % beta = zeros(size(params.fvs_norm_all));
+    % ind_mid = (length(params.fvs_norm_all) + 1)/2;
+    % beta(ind_mid) = 1./(params.fvs_norm_all(ind_mid) - params.fvs_norm_all(ind_mid-1));
+
+
 
 end

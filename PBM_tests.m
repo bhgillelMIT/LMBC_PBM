@@ -12,7 +12,128 @@ function PBM_tests()
     water.name = 'water';
 
 
-%% Test 3 - Constant Coalescence Numerical Test
+
+%% Test 4 - Uniform Binary Breakage
+
+    %Settings
+    loadresults = true;
+    filepath = 'Data/Solutions/PBM_output_28-Feb-2026_15-38-06.mat';
+
+
+    %Set inputs
+    B0 = 35000;
+
+    inputs = PBM_inputs();
+    inputs.src.coalesce_active = false;
+    inputs.src.breakage_active = true;
+    inputs.src.breakage_model = 'Uniform_Binary'; % 'Hounslow_1988'; 'Scott_1968' 
+    inputs.src.breakage_constant_rate = B0;
+    inputs.sol.heat.active = false;
+    inputs.disc.r_min = 1E-5; %For this case, the unit is m3
+    inputs.disc.r_max = 2;
+    inputs.disc.Nms = 100;
+    inputs.disc.dt = 1;
+    inputs.mmesh.type = 'Geometric';
+    inputs.mmesh.input = 'Volume'; 
+    inputs.sim.t_end = 50;
+    inputs.sol.single_layer = true;
+
+    %Run simulation
+    if loadresults
+        data = load(filepath);
+        output = data.output;
+        results = PBM_postprocess(output.T, output.Y, output.params);
+    else
+        results = PBM_v3(inputs);
+    end
+
+    %Ode solution
+    ys = results.y;
+    ts = results.t;
+    tsi = ts;
+    params = results.params;
+
+    %Will calculate at whatever T is desired 
+    Vbs = params.disc.Vbs;
+    dVbs = diff(Vbs); dVbs = repmat(dVbs, length(ts), 1);
+    yi = ys;
+    ys = yi./dVbs;
+
+    %Post process numerical result
+
+
+    %Calculate numeric density versus time
+    Nt = zeros(length(ts), 1);
+    for i = 1:length(ts)
+        Nt(i) = trapz(yi(i,:));
+    end
+    Nt = Nt./Nt(1);
+
+    [~,ind6] = min(abs(Nt - 6));
+    [~,ind300] = min(abs(Nt - 300));
+
+    %Calculate analytic solution
+    vs = logspace(log10(min(Vbs)), log10(0.9999999), 100);
+    ns = zeros(3,length(vs));
+    ts_comp_inds = 2:100:length(ts)
+    ts_comp = ts(ts_comp_inds); %[0; ts(ind6); ts(ind300)];
+    for it = 1:length(ts_comp)
+        t = ts_comp(it)*B0;
+        y_func = @(y) exp(-t.*y.^3)./(y.^2);
+        n_func = @(v) exp(-t.^2) .* dirac(v-1) + (6.*t.*v) .* integral(y_func, v, 1); %exp(-t.^2) .* dirac(v-1) + 6.*t.*v .* integral(y_func, v, 1);
+        %Iterate through each v
+        for iv = 1:length(vs)
+            v = vs(iv);
+            ns(it, iv) = (1/7.7545)*n_func(v);
+        end
+
+    end
+
+
+    %Calculate number
+    Nt_analytical = zeros(1, length(ts_comp));
+    for i = 1:length(ts_comp)
+        Nt_analytical(i) = trapz(ns(i,:));
+    end
+    Nt_analytical = Nt_analytical./Nt_analytical(1);
+
+    figure();
+    plot(ts_comp, Nt_analytical, 'k-'); hold on;
+    plot(ts_comp, Nt(ts_comp_inds), 'ko');
+    
+    %ns(1,:) = n_func(vs, 0);
+    %ns(2,:) = n_func(vs, ts(ind6));
+    %ns(3,:) = n_func(vs, ts(ind300));
+
+
+    %Plot solution at several times
+    figure();
+
+
+
+    
+    loglog(params.Vms, ys(1,:), 'k.'); hold on;
+    loglog(params.Vms, ys(ind6,:), 'ko');
+    loglog(params.Vms, ys(ind300,:), 'k+');
+
+    loglog(vs, ns(2,:));
+    loglog(vs, ns(3,:));
+    %loglog(params.Vms, n_constant(end,:), 'k-');
+    %loglog(params.Vms, n_constant(2,:), 'k--');
+    %loglog(params.Vms, n_constant(1,:), 'k:')
+    %loglog(params.Vms, Fvals, 'k--');
+    ylim([1E-5, 10000]); xlim([inputs.disc.r_min, inputs.disc.r_max])
+    xlabel('Particle Volume (m^3)'); ylabel('Number density (1/m^3)');
+    axis square; grid on; 
+
+    % subplot(1,2,2);
+    % semilogx(xs, n_constant_normal);
+    
+
+
+
+%% Test 3 - Constant Coalescence Numerical Test 
+
 
     %Specify output folder
     output_folder = 'Data/Studies/Analytical/';
@@ -34,7 +155,7 @@ function PBM_tests()
     inputs.disc.dt = 0.0025;
     inputs.mmesh.type = 'Geometric';
     inputs.mmesh.input = 'Volume'; 
-    inputs.sim.t_end = 1;
+    inputs.sim.t_end = 5;
     inputs.sol.single_layer = true;
 
 
@@ -48,19 +169,24 @@ function PBM_tests()
     ts = results.t;
     params = results.params;
 
-
+    %Will calculate at whatever T is desired 
+    Vbs = params.disc.Vbs;
+    dVbs = diff(Vbs); dVbs = repmat(dVbs, length(ts), 1);
+    yi = ys;
+    ys = yi./dVbs;
+    %ys = yi;
 
     %Calculate numeric density versus time
     Nt = zeros(length(ts), 1);
     for i = 1:length(ts)
-        Nt(i) = trapz(ys(i,:));
+        Nt(i) = trapz(params.Vms, ys(i,:));
     end
     Nt = Nt./Nt(1);
 
 
 
-    %Calculate analytical solution
-    ts_ref = [0.00000000001, ts(10), ts(end)];
+    %Calculate analytical soluti on
+    ts_ref = [0.00000000001, ts(6), ts(484)];
 
 
 
@@ -84,12 +210,7 @@ function PBM_tests()
 
 
 
-    %Will calculate at whatever T is desired 
-    Vbs = params.disc.Vbs;
-    dVbs = diff(Vbs); dVbs = repmat(dVbs, length(ts), 1);
-    yi = ys;
-    ys = yi./dVbs;
-    ys = yi;
+    
 
     %Calculate number over time
     Nt = zeros(length(ts), 1);
@@ -107,17 +228,20 @@ function PBM_tests()
     F_func = @(v) (N0/v0) .* exp(-v./v0);
     Fvals = F_func(params.Vms);
 
-    subplot(1,2,1);
+    
     loglog(params.Vms, ys(1,:), 'k.'); hold on;
-    %loglog(params.Vms, ys(10,:), 'ko');
-    loglog(params.Vms, ys(end,:), 'k+');
+    loglog(params.Vms, ys(6,:), 'ko');
+    loglog(params.Vms, ys(484,:), 'k+');
     loglog(params.Vms, n_constant(end,:), 'k-');
-    loglog(params.Vms, n_constant(1,:), 'b-')
-    loglog(params.Vms, Fvals, 'k--');
+    loglog(params.Vms, n_constant(2,:), 'k--');
+    loglog(params.Vms, n_constant(1,:), 'k:')
+    %loglog(params.Vms, Fvals, 'k--');
     ylim([1E-15, 1000]); xlim([inputs.disc.r_min, inputs.disc.r_max])
+    xlabel('Particle Volume (m^3)'); ylabel('Number density (1/m^3)');
+    axis square; grid on; 
 
-    subplot(1,2,2);
-    semilogx(xs, n_constant_normal);
+    % subplot(1,2,2);
+    % semilogx(xs, n_constant_normal);
     
 
 
@@ -220,7 +344,7 @@ function PBM_tests()
 
     subplot(1,2,2);
     xlabel('Bubble Diameter (m)'); ylabel('Normalized BSD');
-    grid on; grid minor; axis square;
+    grid on; axis square;
     set(gca, 'FontSize', 18, 'FontWeight', 'bold');
 
     
@@ -316,21 +440,24 @@ function [n_constant, phi_constant_out] = Scott_1968(ts, N0, v0, C, params)
         % phi_sum = sum(phi_sum_vals);
 
         %Calculate non-dim spectrum
-        %phi_constant = (8 .* exp(-2.*xs) .* sinh(2.*xs.*sqrt(T./(T+2))))./...
+
+        sinh_ins = 2.*xs.*sqrt(T./(T+2));
+        exp_ins = -2.*xs;
+        phi_constant = (8 .* exp(exp_ins) .* sinh(sinh_ins))./...
             (sqrt(T) .* (T+2).^1.5);
         
-        phi_constant = zeros(1,length(params.Vms));
-        for ix = 1:length(params.Vms)
-            x = xs(ix);
-            phi_sum_vals = zeros(1, N_sum_vals);
-            for k = 0:(N_sum_vals-1)
-                phi_sum_vals(k+1) = phi_sum_func(x, T, k);
-            end
-            phi_sum_vals(isinf(phi_sum_vals)) = 0;
-            phi_sum_vals(isnan(phi_sum_vals)) = 0;
-            phi_sum = sum(phi_sum_vals);
-            phi_constant(ix) = (4.*exp(-(nu+1).*x))./(x.*(T+2).^2) .* phi_sum; %4 .* exp(-2.*xs./(T+2))./((T+2).^2); %%(8 .* exp(-2.*xs) .* sinh(2.*xs.*sqrt(T./(T+2))))./(sqrt(T) .* (T+2).^(1.5));  %(4.*exp(-(v+1).*xs))./(xs.*(T+2).^2) .* sum(phi_sum_vals); %4 .* exp(-2.*xs./(T+2))./((T+2).^2); %
-        end
+        % phi_constant = zeros(1,length(params.Vms));
+        % for ix = 1:length(params.Vms)
+        %     x = xs(ix);
+        %     phi_sum_vals = zeros(1, N_sum_vals);
+        %     for k = 0:(N_sum_vals-1)
+        %         phi_sum_vals(k+1) = phi_sum_func(x, T, k);
+        %     end
+        %     phi_sum_vals(isinf(phi_sum_vals)) = 0;
+        %     phi_sum_vals(isnan(phi_sum_vals)) = 0;
+        %     phi_sum = sum(phi_sum_vals);
+        %     phi_constant(ix) = (4.*exp(-(nu+1).*x))./(x.*(T+2).^2) .* phi_sum; %4 .* exp(-2.*xs./(T+2))./((T+2).^2); %%(8 .* exp(-2.*xs) .* sinh(2.*xs.*sqrt(T./(T+2))))./(sqrt(T) .* (T+2).^(1.5));  %(4.*exp(-(v+1).*xs))./(xs.*(T+2).^2) .* sum(phi_sum_vals); %4 .* exp(-2.*xs./(T+2))./((T+2).^2); %
+        % end
         phi_constant(isnan(phi_constant)) = 0;
         phi_constant_out(i,:) = phi_constant;
 

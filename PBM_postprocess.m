@@ -8,7 +8,7 @@ function results = PBM_postprocess(t, y, params)
 
     %Handle no inputs
     if nargin < 1
-        output = load('Data/Solutions/PBM_output_05-Jan-2026_22-31-56.mat');
+        output = load('Data/Solutions/PBM_output_18-Mar-2026_22-50-00.mat'); %load('Data/Solutions/PBM_output_20-Feb-2026_16-00-09.mat');
         output = output.output;
         t = output.T;
         y = output.Y;
@@ -61,7 +61,8 @@ function results = PBM_postprocess(t, y, params)
     ts_init = t;
     t_ind = length(t);
     t = t(t_ind);
-    y_t = y(t_ind, :);
+    y_t = params.Ns_m; %y(t_ind, :);
+    y_t_all = y(end,:);
 
     %Pull relevant values
     X_Ar = params.X_Ar;
@@ -71,8 +72,8 @@ function results = PBM_postprocess(t, y, params)
     rep_m_ind = 20; %Representative index for calculating mean conversion and temperature
 
     %Pull indices
-    xinds = params.xinds;
-    zinds = params.zinds;
+    xinds = params.xinds_m;
+    zinds = params.zinds_m;
     Nz = length(unique(zinds));
 
     %Iterate through z-levels
@@ -85,6 +86,11 @@ function results = PBM_postprocess(t, y, params)
     uspf = zeros(1, params.Nz);
     mdists = zeros(params.Nz, params.Nms);
     mdists_norm = mdists;
+    Tbars = zeros(params.Nz, params.Nms);
+    Xbars = zeros(params.Nz, params.Nms);
+    Tg = zeros(1, params.Nz);
+    Xg = zeros(1, params.Nz); %Overall conversion for each z-level, calculated from the representative mass conversion - IMPROVEMENT: Calculate based on full distribution
+    %Nbs = zeros(params.Nz, params.Nms); %Storage matrix for numeric density of bubbles in each cell
 
     for iz = 1:params.Nz
 
@@ -104,6 +110,8 @@ function results = PBM_postprocess(t, y, params)
         dbs = zeros(1, params.Nms);
         mbs = zeros(1, params.Nms);
         Vbs = zeros(1, params.Nms);
+        Nbs = zeros(1, params.Nms);
+        
         Vdots = Vbs;
         mfluxs = mbs;
         for im = 1:params.Nms
@@ -112,7 +120,7 @@ function results = PBM_postprocess(t, y, params)
             m = params.mms(im);
             ni = params.nms(im);
             X_bar = 0.5; %IMPROVEMENT - Create weighted averaging function once temp and conversion implemented
-            T_bar = CalcTbar(y_t, iz, im, params);
+            T_bar = CalcTbar(y(end,:), y_t, iz, im, params);
             X_bar = CalcXbar(y_t, iz, im, params);
             n_Ar = ni * params.X_Ar;
             n_CH4_i = ni * (1-X_Ar);
@@ -136,14 +144,21 @@ function results = PBM_postprocess(t, y, params)
             N = y_t(ind) * params.Vcells(iz); %# - number of bubbles in the cell
             Vbs(im) = N * V;
 
+            %Pull numeric densities for this representative mass
+            subinds = find(zinds == iz & xinds == im);
+            subNs = y_t(subinds); %All subbins for this mass
+
 
 
             %Calculate mass in cell and mass flux in/out
             dbs(im) = d;
             mbs(im) = N*m_b;
+            Nbs(im) = subNs;
             Nfluxs(im) = N/t_res_b; %Number of bubbles entering/exiting per second
             mfluxs(im) = Nfluxs(im) * m_b; %kg/s
             Vdots(im) = Nfluxs(im) * V;
+            Tbars(iz,im) = T_bar;
+            Xbars(iz,im) = X_bar;
 
             it = it + 1;
 
@@ -151,6 +166,9 @@ function results = PBM_postprocess(t, y, params)
         dbsout(iz,:) = dbs;
         Vdot(iz) = sum(Vdots);
         Vtot(iz) = sum(Vbs);
+        Tg(iz) = Tbars(iz,:) * [Nbs./sum(Nbs)]'; %Weighted average gas temperature for each z-level - UPDATE TO CALCULATE MIXING CUP TEMP
+        Xg(iz) = Xbars(iz,:) * [Nbs./sum(Nbs)]';
+
         alphag(iz) = Vtot(iz)/params.Vcells(iz);
         uspf(iz) = Vdot(iz)/params.reactor.Ac;
         mtot(iz) = sum(mbs);
@@ -162,8 +180,6 @@ function results = PBM_postprocess(t, y, params)
     %Calculate mass relative change
     mrel = mflux./mflux(1);
     
-
-
     %Log results
     results.t = ts_init; results.y = y;
     results.dbsout = dbsout;
@@ -212,8 +228,9 @@ function results = PBM_postprocess(t, y, params)
 
     %Plot for total mass timeseries
     figure();
-    m_inds = 2:1:length(find(params.m_total > 0));
-    plot(ts, 100.*params.m_total(m_inds)./(params.m_total(1)), 'k-', 'LineWidth', lw);
+    m_inds_end = min([length(params.m_total), length(ts)]);
+    m_inds = 1:m_inds_end; %1:length(ts(ts>=0.1));
+    plot(ts(m_inds), 100.*params.m_total(m_inds)./(params.m_total(1)), 'k-', 'LineWidth', lw);
     xlabel('Sim. Time (s)'); ylabel('Normalized Mass');
     title('Total Mass in System')
     grid on; grid minor; axis square;
@@ -251,6 +268,7 @@ function results = PBM_postprocess(t, y, params)
         xlabel('Vertical Position (cm)')
         zlabel('Normalized BSD');
         set(gca, 'YScale', 'log');
+        axis square;
     
 
         %Surface plot - unnormalized
@@ -267,6 +285,7 @@ function results = PBM_postprocess(t, y, params)
         xlabel('Vertical Position (cm)')
         zlabel('Normalized BSD');
         set(gca, 'YScale', 'log');
+        axis square
 
     end
 
@@ -296,6 +315,8 @@ function results = PBM_postprocess(t, y, params)
 
         figure();
 
+
+
         %Define colors
         newcolors = [colors.navyblue;
                      colors.trueblue;
@@ -315,7 +336,10 @@ function results = PBM_postprocess(t, y, params)
             ts_plot(end+1) = ts(in);
             tstrs{i} = sprintf('t = %0.4f s', ts(in));
             y_plot = y(in,:);
+            subplot(1,2,1);
             plot(dbsout(end,:), y_plot, 'LineWidth', lw); hold on;
+            subplot(1,2,2);
+            semilogy(dbsout(end,:), y_plot, 'LineWidth', lw); hold on;
             
 
     
@@ -325,13 +349,79 @@ function results = PBM_postprocess(t, y, params)
             end
 
         end
+
+        subplot(1,2,1);
         xlabel('Diameter (m)'); ylabel('Numeric Density')
         grid on; grid minor; axis square;
         legend(tstrs{1}, tstrs{2}, tstrs{3}, tstrs{4}, tstrs{5}, tstrs{6}, tstrs{7}, tstrs{8});
         set(gca, 'FontSize', fs, 'FontWeight', 'bold');
         title('Single Layer - Timeseries')
+        ylim([0, 18E4]);
+
+        subplot(1,2,2);
+        xlabel('Diameter (m)'); ylabel('Numeric Density')
+        grid on; grid minor; axis square;
+        legend(tstrs{1}, tstrs{2}, tstrs{3}, tstrs{4}, tstrs{5}, tstrs{6}, tstrs{7}, tstrs{8});
+        set(gca, 'FontSize', fs, 'FontWeight', 'bold');
+        ylim([1E-3, 10000])
+        title('Single Layer - Timeseries')
         
     end
 
+    %Probability density (in terms of volume) plot
+    figure();
+    V_total = sum(Vbs);
+    plot(dbs, Vbs./V_total, 'k-', 'LineWidth', lw, 'color', colors.H2blue);
+    grid on; grid minor; axis square;
+    xlabel('Diameter (m)'); ylabel('PDF (volume) of d_b 1/m');
+
+
+
+%% Plot temperature and conversion versus height
+
+    figure();
+
+    %Plot settings
+    dim = 3;
+
+    %Specify colors
+    
+    if params.heat.active
+    
+        %For a sample of representative masses, plot Tbar and Xbar versus height
+        for im = 1:dim:params.Nms
+            subplot(1,2,1)
+            plot(100.*zsc(:,1), Tbars(:,im), 'LineWidth', lw); hold on;
+            xlabel('Vertical Position (cm)'); ylabel('Tbar (K)');
+            grid on; grid minor; axis square;
+            title('Tbar vs Height');
+            set(gca, 'FontSize', fs);
+    
+            subplot(1,2,2)
+            plot(100.*zsc(:,1), 100.*Xbars(:,im), 'LineWidth', lw); hold on;
+            xlabel('Vertical Position (cm)'); ylabel('Xbar');
+            grid on; grid minor; axis square;
+            title('Xbar vs Height');
+            set(gca, 'FontSize', fs);
+        end
+
+        %Plot the weighted average temperature (Tg) and conversion (Xg) versus height
+        figure();
+        subplot(1,2,1)
+        plot(100.*zsc(:,1), Tg, 'r-', 'LineWidth', lw, 'Color', colors.ChiliRed);
+        xlabel('Vertical Position (cm)'); ylabel('Tg (K)');
+        grid on; grid minor; axis square;
+        title('Gas Temp. vs Height');
+        set(gca, 'FontSize', fs);
+
+        subplot(1,2,2);
+        plot(100.*zsc(:,1), 100.*Xg, 'k-', 'LineWidth', lw);
+        xlabel('Vertical Position (cm)'); ylabel('Xg');
+        grid on; grid minor; axis square;
+        title('Gas Conversion vs Height');
+        set(gca, 'FontSize', fs);
+
+
+    end
 
 end

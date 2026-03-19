@@ -1,4 +1,4 @@
-function [y0, params, N_volumes_total] = InitializeVolumes(params, mesh, disc, Fb_i)
+function [y0, params, N_volumes_total, Fb_i_out] = InitializeVolumes(params, mesh, disc, Fb_i)
 
 %% Setupp
 
@@ -276,13 +276,10 @@ function [y0, params, N_volumes_total] = InitializeVolumes(params, mesh, disc, F
             %Iterate through each representative size
             for im = 1:disc.Nms
 
-                
-
-
                 %Determine how many temperatures are relevant
                 merged = chars.merged{im};
                 bins_in = merged.bins_in(:,iz);
-                NTs = max(bins_in);
+                NTs = max(bins_in); % - 1 CHECK THIS
                 NXs = 1;
                 Npts = NTs*NXs;
                 N_volumes_layer(iz) = N_volumes_layer(iz) + Npts;
@@ -388,6 +385,7 @@ function [y0, params, N_volumes_total] = InitializeVolumes(params, mesh, disc, F
     %Define reference cell values
     Vcells_rep = zeros(N_volumes_total,1);
     mms_rep = zeros(N_volumes_total,1);
+    zcs_rep = zeros(N_volumes_total,1);
 
     for iz = 1:params.Nz
 
@@ -410,7 +408,48 @@ function [y0, params, N_volumes_total] = InitializeVolumes(params, mesh, disc, F
     params.Vcells_rep = Vcells_rep; %repmat(params.Vcells, 1, params.Nms); params.Vcells_rep = params.Vcells_rep';
     %params.Vcells_rep = params.Vcells_rep(:);
     params.mms_rep = mms_rep; %repmat(params.mms', params.Nz, 1);
+    
 
+    %Store cell z-level 
+    for iz = 1:params.Nz
+        zcs_rep(zinds == iz) = params.mesh.volcell_cents(iz,2);
+    end
+    params.zcs_rep = zcs_rep;
+
+
+%% Identify Adjacent Indices
+
+    params = IdentifyAdjacentInds(params, N_volumes_total);
+
+%% Update boundary conditions
+
+    %Identify boudary index
+    BC_inds = find(zinds == 1);
+
+    %Iterate through each representative size to determine if 
+    for im = 1:params.Nms
+
+        %Identify cells corresponding to the representative mass
+        mcells = find(xinds == im);
+
+        %Pull the flux in for the mass (total)
+        flux_in = Fb_i(im);
+
+        %Divide flux based on numeric density in each temperature bin 
+        
+
+    end
+
+    Fb_i_out = Fb_i;
 
 
 end
+
+
+   % %Create initial "volumes" and specify boundary conditions
+    % y0 = zeros(N_volumes, 1);
+    % bottom_inds = params.cents_y < min(mesh.volcell_cents(:,2)) + 1E-6;
+    % if params.sol.orifice_BC_type == 1
+    %     Fi_bottom = Fb_i; %repmat(Fb_i, 1,);
+    %     y0(bottom_inds) = Fi_bottom;
+    % end

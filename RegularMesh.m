@@ -16,7 +16,7 @@ function mesh = RegularMesh(xx, yy, zz, options)
     %close all
 
     %Debug
-    debug = true;
+    debug = false;
 
     if nargin < 3
         N_dims = 2;
@@ -115,7 +115,7 @@ function mesh = RegularMesh(xx, yy, zz, options)
     mesh.Nys = length(unique(mesh.volcell_cents(:,2)));
 
     %Debug plot
-    if debug
+    if debug & false
         PlotMesh(mesh)
     end
 

@@ -34,9 +34,21 @@ function dydt = PBM_ode(t,y, params)
     F = y; %F(F < 0) = 0;
     Fs = F; Fs(F < 0) = 0;
 
+    %Check for nans
+    if any(isnan(y))
+        warning('NaNs');
+    end
 
 
+    %Calculate mean temperature and conversion for each representative mass
+    params = CalcTempConvMeans(Fs, params);
 
+    %Calculate total numeric density for each 
+    [params.Ns_z, params.Ns_m, params.Ns_T, params.Ns_fracs] = CalcNumericDensities(y, params);
+
+    %Identify indices for inlet
+    inlet_inds = find(params.zinds == 1); 
+    
     %Warnings
     if any(isnan(F))
         warning('NaNs');
@@ -44,12 +56,6 @@ function dydt = PBM_ode(t,y, params)
     if any(y < 0)
         warning('Negatives');
     end
-
-
-
-
-
-    
 
     %Calculate local conditions
     Xs = params.Xs;
@@ -75,53 +81,78 @@ function dydt = PBM_ode(t,y, params)
     % Compute slopes using MUSCL with Van Leer limiter
     rz = zeros(1, length(F));
     rx = zeros(1, length(F));
-    for j = 1:length(F)
+    for j = 1:length(params.Ns_m)
 
-        %Determine indices
-        xind = params.xinds(j);
-        Tind = params.Tinds(j);
-        Xind = params.Xinds(j);
-        cellind = params.cellinds(j);
-        zind = params.zinds(j);
+        %Pull corresponding indices
+        xind = mod(j-1, params.Nms)+1;
+        zind = floor((j-1)/params.Nms) + 1;
 
+        %Determine adjacent indices
+        ind_above = j - params.Nms;
+        ind_below = j + params.Nms;
 
-        %Calcualte bubble velocity
+        %Calcualte rz
+        if zind == 1 | zind == params.Nz %Bottom or top layer
+            rz_val = 0;
+        else
+            rz_val = (F(j) - F(ind_below))/(F(ind_above) - F(j) + 1E-12);
+        end
+
+        %Determine which indices to apply this to
+        relinds = find(params.zinds == zind & params.xinds == xind);
+
+        %Apply value to 
+        rz(relinds) = rz_val;
+
         
         
         %Identify the index of the matching cell upstream
-        if zind > 1
-
-            %Identify upstream T index
-            merged = params.T_z.chars.merged{xind};
-            T_match = merged.bins_in(:,zind) == Tind; %Need to handle multiple incoming cells
-
-
-            %Identify other upstream indices
-            zmatch = params.zinds == (zind-1);
-            xmatch = params.xinds == xind;
-            Tmatch = 1;%Complicated by merging 
-            Xmatch = params.Xinds == Xind;
-            upstream_ind = find(zmatch & xmatch & Tmatch & Xmatch);
-            downstream_ind = 1;
-        end
+        % if zind > 1
+        % 
+        %     %Identify upstream T index
+        %     merged = params.T_z.chars.merged{xind};
+        %     T_match = merged.bins_in(:,zind) == Tind; %Need to handle multiple incoming cells
+        % 
+        % 
+        %     %Identify other upstream indices
+        %     zmatch = params.zinds == (zind-1);
+        %     xmatch = params.xinds == xind;
+        % 
+        %     %Identify incoming 
+        %     Tmatch = 1;%Complicated by merging 
+        %     Xmatch = params.Xinds == Xind;
+        %     upstream_ind = find(zmatch & xmatch & Tmatch & Xmatch);
+        %     downstream_ind = 1;
+        % 
+        %     %NOTE: Only consider the total numeric density under each mass
+        %     %bin for calculating the limiter 
+        % 
+        % 
+        % end
 
             
-        %Calcualte rz
-        if zind == 1 | zind == params.Nz %Bottom or top layer
-            rz(j) = 0;
-        else
-            rz(j) = (F(j) - F(j-params.Nms))/(F(j+params.Nms) - F(j) + 1E-12);
-        end
+        
 
         %Calculate rx
-        if xind == 1 | xind == params.Nms
-            rx(j) = 0;
-        else
-            rx(j) = (F(j) - F(j-1))/(F(j+1) - F(j) + 1E-12);
-        end
+        % if xind == 1 | xind == params.Nms
+        %     rx(j) = 0;
+        % else
+        %     rx(j) = (F(j) - F(j-1))/(F(j+1) - F(j) + 1E-12);
+        % end
+
+        
+        % %Determine indices
+        % xind = params.xinds(j);
+        % Tind = params.Tinds(j);
+        % Xind = params.Xinds(j);
+        % cellind = params.cellinds(j);
+        % zind = params.zinds(j);
+
 
     end
-    phix = (rx + abs(rx)) ./ (1 + abs(rx)); phix = phix'; % Van Leer limiter
+
+    %Apply Van Leer Limiter
+    %phix = (rx + abs(rx)) ./ (1 + abs(rx)); phix = phix'; % Van Leer limiter
     phiz = (rz + abs(rz)) ./ (1 + abs(rz)); phiz = phiz';
 
     %Calculate derivatives using MUSCL scheme
@@ -147,8 +178,7 @@ function dydt = PBM_ode(t,y, params)
 
 
     %Calculate current gas holdup in each spatial cell
-    params = CalcLocalProperties(Fs, params); %gas fraction, turbulence, etc.
-    %params.uzs = 1;
+    params = CalcLocalProperties(Fs, params); %gas fraction, turbulence, etc.   %params.uzs = 1;
 
     %Calculate source terms
     if t < params.sol.src_delay
@@ -158,15 +188,17 @@ function dydt = PBM_ode(t,y, params)
         cadd = zeros(length(F), 1); csub = cadd;
         badd = cadd; bsub = cadd;
         if params.coalesce.active
-            [cadd, csub] = Coalescence(Fs, params );  
+            [cadd, csub, cmats] = Coalescence(params.Ns_m, params); %Coalescence(Fs, params );  
             cadd = cadd * params.coalesce.damper; %Damper is only used for debugging
             csub = csub * params.coalesce.damper;
+            params.cmats = cmats; %Store for heat/reaction calculations
         end
         if params.break.active
             if params.sol.solve_details
-                [badd, bsub] = Breakage(Fs, params);
+                [badd, bsub, bmats] = Breakage(params.Ns_m, params); %Breakage(Fs, params);
                 params.break.badd = badd;
                 params.break.bsub = bsub;
+                params.bmats = bmats;
             else
                 badd = params.break.badd;
                 bsub = params.break.bsub;
@@ -174,7 +206,51 @@ function dydt = PBM_ode(t,y, params)
             badd = params.break.damper * badd;
             bsub = params.break.damper * bsub;
         end
-        h = cadd - csub + badd - bsub;
+
+        %Distribute
+        if params.heat.active
+            h = params.h;
+
+            h_m = cadd(:) - csub(:) + badd(:) - bsub(:);
+
+            %Store in params
+            params.cadd = cadd; params.csub = csub;
+            params.badd = badd; params.bsub = bsub;
+
+            %Function to distribute proportionally
+            h = DistSourceTerms(y, h_m, params);
+
+
+            %Iterate through bins and allocate
+            ind = 1; %index for coalescence and breakage vectors 
+            for iz = 1:params.Nz
+                for im = 1:params.Nms
+                    subinds = find(params.zinds == iz & params.xinds == im);
+                    h(subinds) = params.Ns_fracs(subinds) .* (cadd(ind) - csub(ind)...
+                        + badd(ind) - bsub(ind));
+                    ind = ind + 1;
+                end
+            end
+        else
+            h = cadd(:) - csub(:) + badd(:) - bsub(:);
+        end
+
+         
+    end
+
+    if params.sol.single_layer
+        h = h;
+    end
+
+    if h(1) == 10000
+        figure();
+        subplot(1,2,1);
+        plot(y);
+        subplot(1,2,2);
+        plot(cadd); hold on;
+        plot(csub); plot(badd); plot(bsub);
+        legend('cadd', 'csub', 'badd', 'bsub');
+        x = 1;
     end
 
     % %Fade source term in
@@ -205,189 +281,208 @@ function dydt = PBM_ode(t,y, params)
     %     warning('NaNs');
     % end
 
-    %Iterate through cells and impose equations
-    FLs = zeros(size(F));
-    FRs = zeros(size(F));
-    for i = 1:length(y)
+    if params.sol.single_layer
 
-        %Pull cell
-        zind = params.zinds(i);
-        xind = params.xinds(i);
-        Tind = params.Tinds(i);
-        Xind = params.Xinds(i);
-        cellind = params.cellinds(i);
-        volcell = params.mesh.volcells{cellind}; %spatial cell 
+        %Assign changes
+        dFdt = h;
 
-        %Determine cell 
-
-        %Calculate derivative
-        %stencil_vals = params.FD_mat(i,:);
-        %stencil_vals = stencil_vals(stencil_vals ~= 0);
-        stencil_vals = volcell.cent_FD_coeffs_D1(:,2);
-        stencil_inds = (volcell.stencil_cells(:,2) - 1) * params.Nms + xind;
-        dFdz = F(stencil_inds)' * stencil_vals;
-
-        %MUSCL for z
-        %phiz(i) = 1;
-        switch params.sol.scheme
-            case 'MUSCL'
-
-                if zind == 1
-                    zi_up = i + params.Nms;
-                    zi_upup = i + 2*params.Nms;
-                    zi_down = i; %No z below
-                    FR_left = F(i) + 0.5 * phiz(i) * (F(zi_up) - F(i));
-                    FR_right = F(zi_up) - 0.5 * phiz(zi_up) * (F(zi_upup) - F(zi_up));
-                    FR = FR_left; %(FR_left + FR_right)/2;
-                    FL = FR; %Boundary condition - dirichlet
-                elseif zind == params.Nz
-                    zi_down = i - params.Nms;
-                    FL = F(zi_down); % + 0.5*phiz(zi_down)*(F(i) - F(zi_down));
-                    FR = F(i);
-                elseif zind == params.Nz - 1
-                    zi_up = i + params.Nms;
-                    zi_down = i - params.Nms;
-                    
-                    FL_left = F(zi_down) + 0.5*phiz(zi_down)*(F(i) - F(zi_down));
-                    FL_right = F(i) - 0.5*phiz(i)*(F(zi_up) - F(i));
-                    FL = FL_left; %(FL_left + FL_right)/2;
-                    
-                    FR = F(i) + 0.5 * phiz(i) * (F(zi_up) - F(i));
-                else
-                    zi_up = i + params.Nms;
-                    zi_upup = i + 2*params.Nms;
-                    zi_down = i - params.Nms;
-                    FR_left = F(i) + 0.5 * phiz(i) * (F(zi_up) - F(i));
-                    FR_right = F(zi_up) - 0.5 * phiz(zi_up) * (F(zi_upup) - F(zi_up));
-                    FR = (FR_left + FR_right)/2;
-    
-                    FL_left = F(zi_down) + 0.5*phiz(zi_down)*(F(i) - F(zi_down));
-                    FL_right = F(i) - 0.5*phiz(i)*(F(zi_up) - F(i));
-                    FL = FL_left; %(FL_left + FL_right)/2;
-                end
-    
-                %Log results
-                FLs(i) = FL;
-                FRs(i) = FR;
-
-            case 'Upwind'
-                if zind == 1
-                    FR = F(i);
-                    FL = FR;
-                elseif zind == params.Nz
-                    FL = F(i-params.Nms);
-                    FR = F(i);
-                else
-                    FL = F(i-params.Nms);
-                    FR = F(i);
-                end
-            case 'None'
-                FR = 0; FL = 0;
-
+        %Print update
+        if debug
+            fprintf('PBM (t = %0.6f s)\n', t)
         end
 
-        %Calculate local properties
+    else
+
+        %Iterate through cells and impose equations
+        FLs = zeros(size(F));
+        FRs = zeros(size(F));
+        for i = 1:length(y)
+    
+            %Pull cell
+            zind = params.zinds(i);
+            xind = params.xinds(i);
+            Tind = params.Tinds(i);
+            Xind = params.Xinds(i);
+            cellind = params.cellinds(i);
+            volcell = params.mesh.volcells{cellind}; %spatial cell 
+    
+            %Determine cell 
+    
+            %Calculate derivative
+            %stencil_vals = params.FD_mat(i,:);
+            %stencil_vals = stencil_vals(stencil_vals ~= 0);
+            stencil_vals = volcell.cent_FD_coeffs_D1(:,2);
+            stencil_inds = (volcell.stencil_cells(:,2) - 1) * params.Nms + xind;
+            dFdz = F(stencil_inds)' * stencil_vals;
+    
+            %MUSCL for z
+            %phiz(i) = 1;
+            switch params.sol.scheme
+                case 'MUSCL'
+    
+                    if zind == 1
+                        zi_up = i + params.Nms;
+                        zi_upup = i + 2*params.Nms;
+                        zi_down = i; %No z below
+                        FR_left = F(i) + 0.5 * phiz(i) * (F(zi_up) - F(i));
+                        FR_right = F(zi_up) - 0.5 * phiz(zi_up) * (F(zi_upup) - F(zi_up));
+                        FR = FR_left; %(FR_left + FR_right)/2;
+                        FL = FR; %Boundary condition - dirichlet
+                    elseif zind == params.Nz
+                        zi_down = i - params.Nms;
+                        FL = F(zi_down); % + 0.5*phiz(zi_down)*(F(i) - F(zi_down));
+                        FR = F(i);
+                    elseif zind == params.Nz - 1
+                        zi_up = i + params.Nms;
+                        zi_down = i - params.Nms;
+                        
+                        FL_left = F(zi_down) + 0.5*phiz(zi_down)*(F(i) - F(zi_down));
+                        FL_right = F(i) - 0.5*phiz(i)*(F(zi_up) - F(i));
+                        FL = FL_left; %(FL_left + FL_right)/2;
+                        
+                        FR = F(i) + 0.5 * phiz(i) * (F(zi_up) - F(i));
+                    else
+                        zi_up = i + params.Nms;
+                        zi_upup = i + 2*params.Nms;
+                        zi_down = i - params.Nms;
+                        FR_left = F(i) + 0.5 * phiz(i) * (F(zi_up) - F(i));
+                        FR_right = F(zi_up) - 0.5 * phiz(zi_up) * (F(zi_upup) - F(zi_up));
+                        FR = (FR_left + FR_right)/2;
         
-
-
-
-        %Calculate x derivative
-        xc = params.rmesh.xsc(xind);
-        x_stencil = params.rmesh.stencil_inds_c(:,xind) + (cellind - 1) * params.Nr;
-        x_coeffs = params.rmesh.coeffs_c(:,xind);
-        dFdx = F(x_stencil)' * x_coeffs;
-
-        %Calculate other derivatives
-        dpdt = -params.reactor.rho_L_bar * params.g * params.ug(zind);
-        dxdp = -(1/3) .* ((0.75 * params.nRTs(xind))/(pi * params.ps(i)^4)).^(1/3);
-        dxdt = dxdp * dpdt;
-        %dxdt = -dpdt .* (params.nRTs(xind)./(36 * pi * params.ps(i))).^(1/3);
-        d2xdxdt = (params.reactor.rho_L_bar * params.g * params.ug(zind))/3 ...
-                    * (params.p_orifice/(params.ps(i)^4))^(1/3); %params.rho_L * params.g * params.uz * ((params.p_orifice)./(9*params.ps(i)))^(1/3);
-
-        %Calculate coefficients
-        uz = params.uz_mu(zind, xind);
-        dmdt = 0; 
-        cx = dxdt;
-        cz = uz;
-        cF = d2xdxdt;
-
+                        FL_left = F(zi_down) + 0.5*phiz(zi_down)*(F(i) - F(zi_down));
+                        FL_right = F(i) - 0.5*phiz(i)*(F(zi_up) - F(i));
+                        FL = FL_left; %(FL_left + FL_right)/2;
+                    end
         
-        %Debug
-        if t > 0.01
-            x = 1;
-        end
-
-        %Handle boundary condition
-        if any(cellind == bottom_inds)
-            if params.sol.orifice_BC_type == 1
-                dFdt_in = zeros(1,params.Nms);
-            elseif params.sol.orifice_BC_type == 2
-                dFdt_in = (params.N_dot_o(xind) - (uz * FR))/params.dz;
+                    %Log results
+                    FLs(i) = FL;
+                    FRs(i) = FR;
+    
+                case 'Upwind'
+                    if zind == 1
+                        FR = F(i);
+                        FL = FR;
+                    elseif zind == params.Nz
+                        FL = sum(F(params.inds_below{i})); %F(i-params.Nms);
+                        FR = F(i);
+                    else
+                        FL = sum(F(params.inds_below{i})); %F(i-params.Nms);
+                        FR = F(i);  
+                    end
+                case 'None'
+                    FR = 0; FL = 0;
+    
             end
-        end
-
-
-
-
-        %Solve equation
-        switch params.sol.scheme
-            case 'MUSCL'
-                stencil_vals = volcell.cent_FD_coeffs_D2(:,2);
-                stencil_inds = (volcell.stencil_cells(:,2) - 1) * params.Nms + xind;
-                d2Fdz2 = F(stencil_inds)' * stencil_vals;
-                if any(cellind == bottom_inds)
-                    dFdt(i) = dFdt_in; %((uz * FL) - (uz * FR))/params.dz + params.mu_art * d2Fdz2;
-                else
-                    dFdt(i) = h(i) + ((uz * FL) - (uz * FR))/params.dz + params.sol.mu_art * d2Fdz2;
-                end
-            case 'Upwind'
-                if any(cellind == bottom_inds)
-                    dFdt(i) = dFdt_in; %((uz * FL) - (uz * FR))/params.dz;
-                else
-                    dFdt(i) = h(i) + ((uz * FL) - (uz * FR))/params.dz;
-                end
-            case 'None'
-                dFdt(i) = h(i);
-       
-            otherwise
-                if any(cellind == bottom_inds)
-                    dFdt(i) = 0;
-                %elseif t < 0.01
-                %    dFdt(i) = h - cz *dFdz;
-                else
-                    %dFdt(i) = h -cz * dFdz - cx * dFdx - cF * F(i);
-                    dFdt(i) = h(i) -cz * dFdz;
-                end
-        end
-
-        %Debug
-        if dFdt(i) > 0
-            x=1;
-        end
-
-        
-
-
-    end
     
-    %Create debug table
-    if debug
-        fprintf('PBM (t = %0.6f s)\n', t)
-        % debugtable = table(F, h, dFdt);
-
-        % figure();
-        % plot(y); hold on;
-        % plot(dFdt);
-        % plot(h);
-        % plot(cadd);
-        % plot(badd);
-        % plot(-csub);
-        % plot(-bsub);
-        % 
-        % 
-        % close all
+            %Debug
+            if zind > 1 & FL > 0 & FR > 0 & t > 2.5
+               x = 1;
+            end
+    
+            %Calculate local properties
+            
+    
+    
+    
+            %Calculate x derivative
+            xc = params.rmesh.xsc(xind);
+            x_stencil = params.rmesh.stencil_inds_c(:,xind) + (cellind - 1) * params.Nr;
+            x_coeffs = params.rmesh.coeffs_c(:,xind);
+            dFdx = F(x_stencil)' * x_coeffs;
+    
+            %Calculate other derivatives
+            dpdt = -params.reactor.rho_L_bar * params.g * params.ug(zind);
+            dxdp = -(1/3) .* ((0.75 * params.nRTs(xind))/(pi * params.ps(i)^4)).^(1/3);
+            dxdt = dxdp * dpdt;
+            %dxdt = -dpdt .* (params.nRTs(xind)./(36 * pi * params.ps(i))).^(1/3);
+            d2xdxdt = (params.reactor.rho_L_bar * params.g * params.ug(zind))/3 ...
+                        * (params.p_orifice/(params.ps(i)^4))^(1/3); %params.rho_L * params.g * params.uz * ((params.p_orifice)./(9*params.ps(i)))^(1/3);
+    
+            %Calculate coefficients
+            uz = params.uz_mu(zind, xind);
+            dmdt = 0; 
+            cx = dxdt;
+            cz = uz;
+            cF = d2xdxdt;
+    
+            %Calculate more accurate velocity estimate at inferfaces
+    
+    
+            
+            %Debug
+            if t > 0.01
+                x = 1;
+            end
+    
+            %Handle boundary condition
+            if any(cellind == bottom_inds)
+                if params.sol.orifice_BC_type == 1
+                    dFdt_in = zeros(1,params.Nms);
+                elseif params.sol.orifice_BC_type == 2
+                    dFdt_in = (params.N_dot_os(i) - (uz * FR))/params.dz;
+                end
+            end
+    
+            %Solve equation
+            switch params.sol.scheme
+                case 'MUSCL'
+                    stencil_vals = volcell.cent_FD_coeffs_D2(:,2);
+                    stencil_inds = (volcell.stencil_cells(:,2) - 1) * params.Nms + xind;
+                    d2Fdz2 = F(stencil_inds)' * stencil_vals;
+                    if any(cellind == bottom_inds)
+                        dFdt(i) = dFdt_in; %((uz * FL) - (uz * FR))/params.dz + params.mu_art * d2Fdz2;
+                    else
+                        dFdt(i) = h(i) + ((uz * FL) - (uz * FR))/params.dz + params.sol.mu_art * d2Fdz2;
+                    end
+                case 'Upwind'
+                    if any(cellind == bottom_inds)
+                        dFdt(i) = dFdt_in; %((uz * FL) - (uz * FR))/params.dz;
+                    else
+                        dFdt(i) = h(i) + ((uz * FL) - (uz * FR))/params.dz;
+                    end
+                case 'None'
+                    dFdt(i) = h(i);
+           
+                otherwise
+                    if any(cellind == bottom_inds)
+                        dFdt(i) = 0;
+                    %elseif t < 0.01
+                    %    dFdt(i) = h - cz *dFdz;
+                    else
+                        %dFdt(i) = h -cz * dFdz - cx * dFdx - cF * F(i);
+                        dFdt(i) = h(i) -cz * dFdz;
+                    end
+            end
+    
+            %Debug
+            if dFdt(i) > 0
+                x=1;
+            end
+    
+            
+    
+    
+        end
+        
+        %Create debug table
+        if debug
+            fprintf('PBM (t = %0.6f s)\n', t)
+            % debugtable = table(F, h, dFdt);
+    
+            % figure();
+            % plot(y); hold on;
+            % plot(dFdt);
+            % plot(h);
+            % plot(cadd);
+            % plot(badd);
+            % plot(-csub);
+            % plot(-bsub);
+            % 
+            % 
+            % close all
+        end
     end
+
 
     %Limit dFdt
     % dF_max = dFdt * params.dt_max;

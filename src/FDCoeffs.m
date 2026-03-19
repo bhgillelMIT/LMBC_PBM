@@ -14,7 +14,7 @@ function mesh = FDCoeffs(mesh, deriv, opts)
     %close all
 
     %Debug
-    debug = true;
+    debug = false;
 
     %Create debug figure
     if debug

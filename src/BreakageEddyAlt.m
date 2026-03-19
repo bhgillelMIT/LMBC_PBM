@@ -3,7 +3,7 @@ function [b_eddy, beta, int_ratio] = BreakageEddyAlt(iz, im, d, Ns_cell, lambda_
     %Debug cases
     if params.debug
         t_start.total = cputime;
-        fprintf('-Eddy Breakage: iz = %i; im = %i; d = %0.5f m; m_i = %0.3e;\n', iz, im, d, params.mms(im));
+        fprintf('-Eddy Breakage (Wang): iz = %i; im = %i; d = %0.5f m; m_i = %0.3e;\n', iz, im, d, params.mms(im));
         x = 1;
     end
 
@@ -66,18 +66,24 @@ function [b_eddy, beta, int_ratio] = BreakageEddyAlt(iz, im, d, Ns_cell, lambda_
         end
 
         %Evaluate outer integral
-        b_fvd = params.break.bfd_zero;
-        ints_fvd = params.break.bfd_zero;
-        for iv = 2:length(params.fvs_norm)
-            f_lambda_fv = Pbs_norm(:,iv)' .* ((lambdas + d).^2)./(lambdas.^(11/3));
-            int_lambda_fv = trapz(lambdas, f_lambda_fv);
-            ints_fvd(iv) = int_lambda_fv;
-            b_fvd(iv) = 0.923 .* (1 - params.alpha_g(iz)) .* Ns_cell(im) .* params.turb.eps(iz).^(1/3) .* int_lambda_fv;
-            
-            %Log number of iterations
-            its_total = its_total + 1;
+        if any(Pbs_norm(:) > 0)
+            b_fvd = params.break.bfd_zero;
+            ints_fvd = params.break.bfd_zero;
+            for iv = 2:length(params.fvs_norm)
+                f_lambda_fv = Pbs_norm(:,iv)' .* ((lambdas + d).^2)./(lambdas.^(11/3));
+                int_lambda_fv = trapz(lambdas, f_lambda_fv);
+                ints_fvd(iv) = int_lambda_fv;
+                b_fvd(iv) = 0.923 .* (1 - params.alpha_g(iz)) .* Ns_cell(im) .* params.turb.eps(iz).^(1/3) .* int_lambda_fv;
+                
+                %Log number of iterations
+                its_total = its_total + 1;
+            end
+
+        else
+            b_fvd = params.break.bfd_zero;
+            ints_fvd = b_fvd;
         end
-    
+        
         %Calculate overall rate
         b_eddy = trapz(params.fvs_norm, b_fvd);
 
@@ -109,12 +115,22 @@ function [b_eddy, beta, int_ratio] = BreakageEddyAlt(iz, im, d, Ns_cell, lambda_
         if isnan(int_ratio)
             int_ratio = 0;
         end
+
+        if b_eddy > 0
+            x = 1;
+        end
     
         %Test that the int_ratio converts back to the breakage rate
         int_lambda_fvs = int_ratio .* beta(1:length(params.fvs_norm));
     
         b_fvd_test = 0.923 .* (1 - params.alpha_g(iz)) .* Ns_cell(im) .* params.turb.eps(iz).^(1/3)  .* int_lambda_fvs;
         b_eddy_test = trapz(params.fvs_norm, b_fvd_test);
+
+        %Check b_eddy_test  
+        b_eddy_test_diff = abs(b_eddy_test - b_eddy);
+        if b_eddy_test_diff > (0.0001 * b_eddy)
+            x = 1;
+        end
 
     else
         b_eddy = 0;

@@ -12,7 +12,9 @@ function results = PBM_v3(inputs)
     close all
 
     %Debug
-    debug = true;
+    debug = false;
+
+
 
     %Plot settings
     lw = 2;
@@ -133,12 +135,14 @@ function results = PBM_v3(inputs)
     [Nb_i, Fb_i] = PBM_BCs(reactor, mesh, inlet,  disc, zs, mmesh.rms, mmesh.Vms, T_orifice, reactor.liquid, p_orifice,  inputs, fsolve_opts);
 
     %Plot inlet bubble size distribution
-    figure();
-
-    plot(100 .* mmesh.rms, Fb_i, 'k-', 'LineWidth', lw); 
-    xlabel('Bubble Radius (cm)'); ylabel('Num. density (1/(kg*m^3))');
-    grid on; grid minor; axis square;
-    title('Initial Bubble Size Distribution (BSD)');
+    if debug
+        figure();
+    
+        plot(100 .* mmesh.rms, Fb_i, 'k-', 'LineWidth', lw); 
+        xlabel('Bubble Radius (cm)'); ylabel('Num. density (1/(kg*m^3))');
+        grid on; grid minor; axis square;
+        title('Initial Bubble Size Distribution (BSD)');
+    end
 
     
 
@@ -195,8 +199,6 @@ function results = PBM_v3(inputs)
     params.sol.solve_details = true;
     params.sol.solve_detail_its = sol.solve_detail_its;
     params.sol.single_layer = sol.single_layer;
-    
-
 
     %Characteristic parameters
     params.chars.debug = false;
@@ -225,9 +227,9 @@ function results = PBM_v3(inputs)
     params.coalesce.active = inputs.src.coalesce_active;
     %params.coalesce.constant = true; %
     params.coalesce.eddy = true; %Eddy coalescence - true = enabled; false = disabled
-    params.coalesce.wake = true; %Eddy coalescence - true = enabled; false = disabled
-    params.coalesce.rise = true;
-    params.coalesce.damper = 1; %Coalescence rate damper (to help with visualization)
+    params.coalesce.wake = false; %Wake entrainment coalescence - true = enabled; false = disabled
+    params.coalesce.rise = true; %Coalescence from different rise velocities - true = enabled; false = disabled;
+    params.coalesce.damper = 1; %Coalescence rate damper (to help with visualization) - SHOULD BE 1 OTHERWISE
     params.coalesce.We_crit = 100; %Critical weber number for bubble breakup - from Wang et al. 2005
     params.coalesce.constant_freq = 1; %Collisions per second
     params.coalesce.m_src = zeros(1, 10000);
@@ -240,14 +242,15 @@ function results = PBM_v3(inputs)
     params.break.debug = false;
     params.break.eddy = true;
     params.break.surf = true;
-    params.break.damper = 1;
+    params.break.damper = 1; %Breakage rate damper to help with visualization - SHOULD BE 1 OTHERWISE
     params.break.b_star = 100; %Model parameter - Wang et al 2005
     params.break.m_star = 6.0; %Model parameter - 
     params.break.folder = folders.break;
-    params.break.loadfile = true;
+    params.break.loadfile = true; %Determines if a new interpolation file is first generated - set to true to use the existing file referenced 
+    params.break.model = inputs.src.breakage_model;
     params.break.type = 'non-uniform'; %Type of breakage - 'uniform' = bubbles are uniformly distributed among smaller sizes; 'non-uniform' = the an exact bubble size distribution, this is slower.
     params.break.int_method = 'trapz'; %Type of integration to use for evaluating integrals in breakage kernels - Options: 'gauss' for gaussian quadrature, 'trapz' for trapezoidal integration
-    params.break.badd= NaN;
+    params.break.badd = NaN;
     params.break.bsub = NaN;
     params.break.m_src = zeros(1, 10000);
     params.break.m_snk = zeros(1, 10000);
@@ -257,6 +260,7 @@ function results = PBM_v3(inputs)
 
     %Heat transfer parameters
     params.heat.active =  sol.heat.active;
+    params.heat.source_mode = 'simple'; % Options: 'simple' or 'adaptive'; Details: 'simple' allocation proportional to original allocation for the sink representative mass; 
 
 
 
@@ -281,8 +285,7 @@ function results = PBM_v3(inputs)
     params.M.H2 = 0.002016;
     params.M.Ar = 0.039948;   
 
-    %Define boundary condition
-    params.N_dot_o = Nb_i/reactor.Ac;
+    
     
 
 
@@ -319,7 +322,7 @@ function results = PBM_v3(inputs)
     params.alpha_g_max = 0.8;
     params.X_Ar = 0;
     params.M_gas_i = params.argon.mol_mass * params.X_Ar + params.methane.mol_mass * (1-params.X_Ar);
-    params.N_volumes = params.N_cells * params.Nms;
+    %params.N_volumes = params.N_cells * params.Nms;
     
     %Define heat transfer parameters
     params.dT_end_max = 20; %K - maximum spacing of points at the 
@@ -344,7 +347,7 @@ function results = PBM_v3(inputs)
     params.mus = liquid.dyn_visc(params.T_Lz(params.zms));
     params.rhos = liquid.density(params.T_Lz(params.zms));
     params.sigmas = liquid.surf_tension(params.T_Lz(params.zms));
-    params.nus = liquid.dyn_visc(params.T_Lz(params.zms))./params.rhos;
+    params.nus = params.mus(:)./params.rhos(:);
 
     %Calculate critical diameters for each bubble size for heat transfer
     Ts = linspace(reactor.T_min, reactor.T);
@@ -363,9 +366,6 @@ function results = PBM_v3(inputs)
     params.p_z =  InitializePressure(mesh, params);
     params.p_orifice = params.p_z(0);
 
-    
-    
-
     %Calculate volume of each spatial cell
     params.Vsz = pi .* reactor.R^2 .* (mesh.yy(2:end, :) - mesh.yy(1:end-1, :)); %m3 - volume of z cells
 
@@ -383,31 +383,35 @@ function results = PBM_v3(inputs)
     params.cents_x = cents_x;
     params.cents_y = cents_y;
 
-    %Calculate cell values
-    params.p_orifice = reactor.p_surf + reactor.rho_L_bar*g*reactor.H;
-    params.nRTs = params.p_orifice .* (4/3) .* pi .* mmesh.rms.^3; %Constant
-    params.p_func = @(z) reactor.p_surf + reactor.rho_L_bar.*g.*(reactor.H-z);
-    params.ps = reactor.p_surf + reactor.rho_L_bar*g*(reactor.H-params.cents_y);
-    params.Ts = params.T_Lz(params.cents_y);%   reactor.T .* ones(size(params.cents_y));
-    params.Tsz = params.T_Lz(unique(params.cents_y));
-    params.Xs = (params.cents_y/reactor.H);
-    params.ms = repmat(params.mms, 1, params.Nz); params.ms = params.ms';
-    params.ns_i = params.ms./params.M.CH4;
-    params.rhos_l = liquid.density(params.Ts);
+    
     
     %Load or resolve temperature characteristics
     params.LC_trail_type = 'Initial'; %How trailing points are designated: 'Final' = the final temperature is defined to maintain a known resolution at the end state; 'Initial' = initial temperature defined as somewhere on the slowest line, then final temperature resolved
     params.LC_trail_spacing = 'geo'; %How the trailing points are spaced: 'lin' = equal spacing; 'geo' = geometric spacing; 'log' = logarithmic spacing
     params.LC_trail_geo_r = 0.7;
     params.SBM_folder = 'SBM Characteristics/Demo6/';
-    params = LoadTempChars(params);
+    params = LoadTempChars(params); %Load or resolve T/X characteristics
+    
 
     %Create initial "volumes"
-    [y0, params, N_volumes] = InitializeVolumes(params, mesh, disc, Fb_i);
+    [y0, params, params.N_volumes, Fb_i] = InitializeVolumes(params, mesh, disc, Fb_i);
     %N_volumes = mesh.N_cells .* disc.Nms;
     % params.cellinds = repmat([1:mesh.N_cells], disc.Nms, 1); params.cellinds = params.cellinds(:); %Specifies which spatial cell the volume maps to
     % params.xinds = repmat([1:disc.Nms]', mesh.N_cells, 1);
     % params.zinds = repmat([1:disc.Nz], disc.Nms, 1); params.zinds = params.zinds(:);
+
+    %Calculate cell values
+    params.p_orifice = reactor.p_surf + reactor.rho_L_bar*g*reactor.H;
+    params.nRTs = params.p_orifice .* (4/3) .* pi .* mmesh.rms.^3; %Constant
+    params.p_func = @(z) reactor.p_surf + reactor.rho_L_bar.*g.*(reactor.H-z);
+    params.ps = reactor.p_surf + reactor.rho_L_bar*g*(reactor.H-params.zcs_rep);
+    params.Ts = params.T_Lz(params.zcs_rep);%   reactor.T .* ones(size(params.cents_y));
+    params.Tsz = params.T_Lz(unique(params.cents_y));
+    params.Xs = (params.zcs_rep/reactor.H);
+    params.ms = params.mms_rep; %repmat(params.mms, 1, params.Nz); params.ms = params.ms';
+    params.ns_i = params.ms./params.M.CH4;
+    params.rhos_l = liquid.density(params.Ts);
+
 
 
     %Calculate bubble velocity lookup table - only for non-reacting,
@@ -444,7 +448,12 @@ function results = PBM_v3(inputs)
     params.nb_mu = params.Vb_mu;
     params.db_mu = params.Vb_mu;
     params.ug = zeros(params.Nz, 1);
-
+    params.Ns_z_zero = zeros(1, params.Nz); %1/m3 - Total Numeric density for each spatial cell
+    params.Ns_m_zero = zeros(1, params.Nz * params.Nms); %1/m3 - Total Numeric density for each mass cell
+    params.Ns_T_zero = zeros(1, length(find(params.Xinds == 1))); %1/m3 - Total Numeric density for each temperature cell
+    params.h = zeros(params.N_volumes, 1); %m3/s - source term storage vector - preallocating 
+    params.zinds_m = repmat([1:params.Nz], params.Nms, 1); params.zinds_m = params.zinds_m(:);
+    params.xinds_m = repmat([1:1:params.Nms], 1, params.Nz); params.xinds_m = params.xinds_m(:);
 
     %Breakage parameters
     params.break.delta = 0.01;
@@ -470,7 +479,7 @@ function results = PBM_v3(inputs)
     %Create Bubble Size Distribution (BSD) interpolation function   
     params.break.interp = true;
     params.break.eps_range = [0, 5];
-    params.break.d_range = [1E-5, 0.05];
+    params.break.d_range = [0.001, 0.05];
     params.break.N_u_spfs = 25;
     params.break.N_d_interp = 2;
     params.break.N_eps_interp = 2;
@@ -479,14 +488,6 @@ function results = PBM_v3(inputs)
     params.break.N_ds = 25; %1.*params.Nms;
     params.break.filename = sol.break_file;
     params = LoadBreakFile(params);
-    
-    % if params.break.loadfile
-    %     load(params.break.filename);
-    %     params.break.beta_ratio = break_out.beta_ratio;
-    %     params.break.beta = break_out.beta;
-    % else
-    %     params = CalculateBSDs(params);
-    % end
 
     %Debug analyis
     if params.debug
@@ -494,14 +495,9 @@ function results = PBM_v3(inputs)
     end
 
 
-
-    % %Create initial "volumes" and specify boundary conditions
-    % y0 = zeros(N_volumes, 1);
-    % bottom_inds = params.cents_y < min(mesh.volcell_cents(:,2)) + 1E-6;
-    % if params.sol.orifice_BC_type == 1
-    %     Fi_bottom = Fb_i; %repmat(Fb_i, 1,);
-    %     y0(bottom_inds) = Fi_bottom;
-    % end
+    %Solve bin temperatures
+    params = CalcCharTemps(y0, params); %Resolve the middle bin temperature based on those characteristics
+ 
 
 
     %Allocate storage for detailed calculations to enable steps  without
@@ -514,17 +510,16 @@ function results = PBM_v3(inputs)
     params.m_total = zeros(1, 10000);
     params.m_total(1) = sum(params.mms_rep .* y0 .* params.Vcells_rep);
 
+    
+    
 
-
-   
-    %Process Inputs
-   
-
-
-
+    %Define boundary condition
+    params.N_dot_o = Nb_i/reactor.Ac;
+    params.N_dot_os = CalcInletFluxes(params); %ISSUE TO RESOLVE
 
     %Debug tests
-    BreakageTest(params);
+    %BreakageTest(params);
+    %SourceTest(params);
 
 
 
@@ -696,9 +691,6 @@ function results = PBM_v3(inputs)
     %     %Define status
     %     status = 0;
     % end
-
-
-
 end
 
 
@@ -991,83 +983,6 @@ function fvc_func_poutput = Calculatefvcfunc(lambda_rats)
 
 end
 
-
-% function fv_ih_max_funcs = Calculate_fvhi_max_func(params)
-%     %Use sigmas at each spatial cell, can then be precise, rather than
-%     %using interpolation. Simplifies it two parameters (d, e_ih);
-% 
-%     warning('off','all')
-%     options = optimset('Display','off');
-% 
-% 
-%     %Debug timing
-%     % if params.debug
-%     %     fprintf('')
-%     % end
-% 
-%     %Settings
-%     N_pts = 1000;
-% 
-%     %Calculate range of lambdas
-%     u_spfs = linspace(params.u_spfs(1), params.u_spfs(2), 20);
-%     turb_eps = u_spfs .* params.g;
-%     nus = repmat(params.nus, 1, length(turb_eps));
-%     turb_eps = repmat(turb_eps, params.Nz, 1);
-%     lambda_komogorov = ((nus.^3)./turb_eps).^0.25; %m
-%     lambda_min = 31.4 * min(lambda_komogorov(:));
-%     lambdas = linspace(lambda_min, 2.*params.rms(end));
-%     lambda_max =  2.*params.rms(end);
-% 
-%     %Bound energies
-%     fvs = linspace(0,0.5);
-%     fv_min = params.dfv_cap;
-%     fv_max = 0.5;
-%     d_min = 2 .* params.rms(1);
-%     d_max = 2 .* params.rms(end);
-%     sigma_max = max(params.sigmas);
-%     sigma_min = min(params.sigmas);
-%     e_is_max = (pi .* lambda_max.^3 .* sigma_max)/(6 .* fv_min.^(1/3) .* d_min);
-%     e_is_min = (pi .* lambda_min.^3 .* sigma_min)/(6 .* fv_max.^(1/3) .* d_max);
-%     e_is = logspace(log10(e_is_min), log10(e_is_max), N_pts);
-% 
-%     %Create matrix for 2d interpolation
-%     ds = 2 .* params.rms;
-%     [ds_mat, e_is_mat] = meshgrid(ds, e_is);
-% 
-%     %Solve
-%     fv_ih_max_funcs = cell(1, params.Nz);
-%     for iz = 1:params.Nz
-%         fvih_maxes = zeros(size(ds_mat));
-%         for ie = 1:length(e_is)
-%             for id = 1:length(ds)
-%                 e_i = e_is_mat(ie, id);
-%                 d = ds_mat(ie, id);
-%                 fv_ih_max_func = @(fv) e_i - (fv.^(2/3) + (1 - fv).^(2/3) - 1) .* pi .* d.^2 .* params.sigmas(iz);
-%                 try
-%                     fv_ih_max = fzero(fv_ih_max_func, [0, 0.5], options);
-%                 catch
-%                     fv_ih_max = 0;
-%                 end
-%                 fvih_maxes(ie, id) = fv_ih_max;
-%             end
-% 
-%         end
-% 
-%         %Store interpolation function for each z-level
-%         fv_ih_max_func = @(d, ie) interp2(ds_mat, e_is_mat, fvih_maxes, d, ie, 'cubic');
-%         fv_ih_max_funcs{iz} = fv_ih_max_func;
-% 
-%     end
-% 
-%     %Turn warnings back on
-%     warning('on','all')
-% 
-%     %Save result
-%     if params.fvih_saveoutput
-%         save('fv_ih_max_funcs.mat', 'fv_ih_max_funcs');
-%     end
-% 
-% end
 
 
 

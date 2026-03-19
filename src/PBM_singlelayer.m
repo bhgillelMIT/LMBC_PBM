@@ -18,7 +18,7 @@ function [reactor, disc, sol] = PBM_singlelayer(reactor, disc, sol)
         disc.Nz = 1;
 
         %Update geometry
-        reactor.H = 0.01;
+        %reactor.H = 0.01;
 
     end
 

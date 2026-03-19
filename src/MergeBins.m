@@ -17,7 +17,7 @@ function merged = MergeBins(params)
     merged = cell(1,params.Nms);
 
     %Define zs
-    zs_all = linspace(0, params.reactor.H, length(params.T_z.chars.Ts_zs{18}{1}{1}));
+    zs_all = linspace(0, params.reactor.H, length(params.T_z.chars.Ts_zs{1}{1}{1}));
 
     %Iterate through mass
     

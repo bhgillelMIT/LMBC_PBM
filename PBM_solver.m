@@ -186,10 +186,24 @@ function  [T,Y] = PBM_solver(tspan, y0, params, options, varargin)
         otherwise % use solver directly 
 
             %Print update
-            fprintf('PBM - Using Direct Solver (ode45).\n\n');
+            fprintf('PBM - Using Direct Solver (ode15s).\n\n');
 
-            [T,Y] = ode15s(@(t,y) PBM_ode(t,y,params), tspan, y0, ode15opts);
-           
+            %Initialize with ode45 to improve accuracy of Jacobian
+            tspan1 = [tspan(1), 0.05]; %min([0.1, 0.025*tspan(end)])];
+            [T1,Y1] = ode45(@(t,y) PBM_ode(t,y,params), tspan1, y0, ode45opts);
+            ms1 = params.m_total;
+
+            %Full run
+            y0 = Y1(end,:);
+            tspan2 = [tspan1(end), tspan(end)];
+            [T,Y] = ode15s(@(t,y) PBM_ode(t,y,params), tspan2, y0, ode15opts);
+            ms2 = params.m_total;
+
+            %Consolidate outputs
+            T = [T1; T]; Y = [Y1; Y];
+            ms_total = [ms1(ms1 > 0), ms2(ms2 > 0)];
+            params.m_total = ms_total;
+            x = 1;
 
 
 

@@ -97,6 +97,35 @@ function PBM_Analysis(params)
     % 
     %     end
 
+%% Single layer convergence example
 
+    %Load colors
+    colors = PlotColors();
+    fs = 18;
+
+    %Load data files
+    data_low = load('Data/Solutions/PBM_output_18-Mar-2026_22-41-27.mat');
+    data_high = load('Data/Solutions/PBM_output_18-Mar-2026_22-50-00.mat');
+
+    %Extract final curves
+    output_low = data_low.output;
+    params_low = output_low.params;
+    Y_final_low = output_low.Y(end,:);
+    output_high = data_high.output;
+    params_high = output_high.params;
+    Y_final_high = output_high.Y(end,:);
+
+    %Plot results
+    figure();
+    subplot(1,2,1);
+    plot(params_low.dms, Y_final_low, 'LineWidth', 1.5, 'LineStyle', '-', 'Color', colors.trueblue); hold on;
+    plot(params_high.dms, Y_final_high, 'ko', 'LineWidth', 1.5);
+    grid on; grid minor; axis square;
+    %xlabel('Bubble diameter (m)'); ylabel('Numeric Density (1/m^3)');
+    title('Single Layer Convergence Example');
+    ylim([0, 18E4]);
+    xlabel('Diameter (m)'); ylabel('Numeric Density')
+    legend('Di = 6 mm', 'Di = 20 mm');
+    set(gca, 'FontSize', fs, 'FontWeight', 'bold');
 
 end

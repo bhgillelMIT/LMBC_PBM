@@ -65,7 +65,7 @@ function [disc, mmesh] = PBM_mmesh(disc, mmesh, reactor, p_orifice, rho_gas_orif
             end
 
             %Debug plot
-            if debug
+            if false
                 figure(); 
                 semilogx(disc.mbs, zeros(size(disc.mbs)), 'r.')
                 xlabel('Mass (kg)');

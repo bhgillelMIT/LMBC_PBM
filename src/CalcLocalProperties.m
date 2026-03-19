@@ -35,6 +35,11 @@ function params = CalcLocalProperties(y, params)
             params.V_mu(iz, ix) = (params.n_mu(iz, ix) .* params.R .* params.T_mu(iz,ix))./params.p_func(z);
             params.d_mu(iz, ix) = ((6 .* params.V_mu(iz, ix))./pi).^(1/3);
 
+            if any(~isreal(params.d_mu))
+                x = 1;
+            end
+
+
             %Calculate current bubble velocities
             if params.sol.solve_ub
                 params.uz_mu(iz, ix) = params.ubs.funcs{iz}(params.d_mu(iz, ix));

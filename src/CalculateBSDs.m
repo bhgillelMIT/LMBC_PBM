@@ -8,8 +8,9 @@ function params = CalculateBSDs(params)
     %Calculate range of bubble diameters
     V_min = (params.nms(1) .* params.R .* params.T_mu_i)./params.p_orifice;
     V_max = (2.*params.nms(end) .* params.R .* params.T_liq)./params.p_surf;
-    d_min = (6.*V_min/pi).^(1/3);
+    d_min = (6.*V_min/pi).^(1/3); 
     d_max = (6.*V_max/pi).^(1/3);
+
     ds = logspace(log10(params.break.d_range(1)), log10(params.break.d_range(2)), params.break.N_ds);
 
     %Calculate range of turbulent kinetic energy dissipation (epsilon)
@@ -57,6 +58,7 @@ function params = CalculateBSDs(params)
     fvs_mg_total = zeros(params.break.N_ds, params.break.N_eps, length(params.fvs_norm_all));
     betas_total = zeros(params.break.N_ds, params.break.N_eps, length(params.fvs_norm_all));
     bs_ints_ratio_total = zeros(params.break.N_ds, params.break.N_eps);
+    bs_total = bs_ints_ratio_total;
 
 
     %Iterate through spatial cells
@@ -117,7 +119,8 @@ function params = CalculateBSDs(params)
                     %Pull bubble size
                     %mi = params.mms(im); %Current represenative mass
                     %V = (params.nms(im) .* (1 + params.X_mu(iz, im)) .* params.R .* params.T_mu(iz,im))./params.p_func(z);
-                    d = ds(id); %(6.*V/pi).^(1/3);
+                    d = ds(id); %(6.*V/pi).^(1/3); d = 0.003; 
+
                     %u = params.uzs(cellinds(im));
         
         
@@ -139,8 +142,15 @@ function params = CalculateBSDs(params)
                         
             
                         %Calculate breakage rate and BSD
-                        [b_eddy, beta, int_ratio] = BreakageEddyAlt(iz, id, d, Ns_cell, lambda_min, N_lambdas, paramsin);
-        
+                        switch params.break.model
+                            case 'Luo_Svendson_1996'
+                                [b_eddy, beta, int_ratio] = BreakageLuoSvendson(iz, id, d, Ns_cell, lambda_min, N_lambdas, paramsin);
+                            case 'Wang_2005'
+                                [b_eddy, beta, int_ratio] = BreakageEddyAlt(iz, id, d, Ns_cell, lambda_min, N_lambdas, paramsin);
+                            otherwise
+                                error('Breakage model not recognized. Options are "Luo_Svendson_1996", and "Wang_2005".');
+                        end
+
                         %Store results
                         bs_ints_ratio(id, ie2) = int_ratio;
                         bs(id, ie2) = b_eddy; %Breakage rate
@@ -174,7 +184,7 @@ function params = CalculateBSDs(params)
                 fvs_mg_total(ds_mg_inds, epss_mg_inds, :) = fvs_mg;
                 betas_total(ds_mg_inds, epss_mg_inds, :) = betas;
                 bs_ints_ratio_total(ds_mg_inds, epss_mg_inds) = bs_ints_ratio;
-                
+                bs_total(ds_mg_inds, epss_mg_inds) = bs;
 
 
                 %Create and store interpolation function
@@ -183,6 +193,7 @@ function params = CalculateBSDs(params)
 
                 params.break.funcs{iz}{func_it}.eps_range = [min(turb_epss), max(turb_epss)];
                 params.break.funcs{iz}{func_it}.d_range = [min(ds), max(ds)];
+                params.break.funcs{iz}{func_it}.b_eddy = @(d, eps) interp2(ds_mg2', eps_mg2', bs, d, eps);
                 params.break.funcs{iz}{func_it}.betas = @(d, eps, fv) interpn(ds_mg, turb_epss_mg, fvs_mg, betas, d, eps, fv); %function of fv, d, eps
                 params.break.funcs{iz}{func_it}.beta_ratio = @(d, eps) interp2(ds_mg2', eps_mg2', bs_ints_ratio', d, eps); %params.bs{iz} = @(d, eps) interp2(ds_mg2, eps_mg2, bs, d, eps);
                 params.break.funcs_eps_range(func_it,:) = [min(turb_epss), max(turb_epss)];
@@ -203,8 +214,11 @@ function params = CalculateBSDs(params)
         %Create full cost interpolation functions
         %params.break.func.eps_range = [min(turb_epss), max(turb_epss)];
         %params.break.func.d_range = [min(ds), max(ds)];
+        params.break.b_eddy = @(d, eps) interp2(ds_mg2_total', eps_mg2_total', bs_total', d, eps);
         params.break.betas = @(d, eps, fv) interpn(ds_mg_total, turb_epss_mg_total, fvs_mg_total, betas_total, d, eps, fv); %function of fv, d, eps
         params.break.beta_ratio = @(d, eps) interp2(ds_mg2_total', eps_mg2_total', bs_ints_ratio_total', d, eps); %params.bs{iz} = @(d, eps) interp2(ds_mg2, eps_mg2, bs, d, eps);
+        
+        
         %params.break.funcs_eps_range(func_it,:) = [min(turb_epss), max(turb_epss)];
         %params.break.funcs_d_range(func_it,:) = [min(ds), max(ds)];
             
@@ -277,6 +291,15 @@ function params = CalculateBSDs(params)
     break_out.eps_range = params.break.funcs_eps_range;
     
     %Save file
+    switch params.break.model
+        case 'Wang_2005'
+            outname = sprintf('break_%s_Wang_Nd-%d_Nz-%d_Ne-%d_TL-%d.mat', params.liquid.name, params.break.N_d_interp, params.Nz, params.break.N_eps_interp, round(params.T_liq));
+        case 'Luo_Svendson_1996'
+            outname = sprintf('break_%s_LuoSvendson_Nd-%d_Nz-%d_Ne-%d_TL-%d.mat', params.liquid.name, params.break.N_d_interp, params.Nz, params.break.N_eps_interp, round(params.T_liq));
+        otherwise
+            error('Invalid breakage model. Options are "Wang_2005", and "Luo_Svendson_1996".');
+    end
+            
     outname = sprintf('break_%s_Nd-%d_Nz-%d_Ne-%d_TL-%d.mat', params.liquid.name, params.break.N_ds, params.Nz, params.break.N_u_spfs, round(params.T_liq));
     outpath = [params.folders.break, outname];
     save(outname, 'break_out');
@@ -285,5 +308,53 @@ function params = CalculateBSDs(params)
     params.break.funcs = break_out.funcs;
     params.break.funcs_d_range = break_out.d_range;
     params.break.funcs_eps_range = break_out.eps_range;
+
+    %Check that the functions work
+    if true
+            
+            %Create figure
+            figure();
+            
+            %Test each of the windows
+            for i = 1:N_funcs
+
+                %Specify subplot
+                subplot(2,2,i);
+
+                %Calculate interpolated value 
+                d_test = mean(params.break.funcs_d_range(i,:));
+                eps_test = mean(params.break.funcs_eps_range(i,:));
+                paramsin.turb.eps(:) = eps_test;
+                [beta_eddy_test, beta_ratio_test, b_eddy_test] = BreakageInterpolate(d_test, eps_test, 1, params);
+
+                %Calculate actual value for comparison
+                if strcmp(params.break.model, 'Luo_Svendson_1996')
+                    [b_eddy, beta, int_ratio] = BreakageLuoSvendson(1, 1, d_test, 1, lambda_min, N_lambdas, paramsin);
+                elseif strcmp(params.break.model, 'Wang_2005')
+                    [b_eddy, beta, int_ratio] = BreakageEddyAlt(1, 1, d_test, 1, lambda_min, N_lambdas, paramsin);
+                else
+                    error('Invalid breakage model. Options are "Wang_2005", and "Luo_Svendson_1996".');
+                end
+
+                %Compare the values
+                b_eddy_err = abs(b_eddy - b_eddy_test)./b_eddy;
+                beta_err = mean(abs(beta - beta_eddy_test)./beta);
+
+                %Plot the betas
+                plot(params.fvs_norm_all, beta, 'b-', 'LineWidth', 1.5); hold on;
+                plot(params.fvs_norm_all, beta_eddy_test, 'r.', 'MarkerSize', 18); hold on;
+                xlabel('Breakage Fraction'); ylabel('BSD'); 
+                title(sprintf('d = %.4f m, eps = %.2f m^2/s^3', d_test, eps_test));
+                grid on; grid minor; axis square;
+                ylim([0, 20]);
+                legend('Actual', 'Interpolated');
+                
+                x = 1;
+            end
+
+
+        % catch
+        %     error('Issue with interpolation functions. Review code.');
+        % end
 
 end

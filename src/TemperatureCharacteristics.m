@@ -115,6 +115,10 @@ function outputs = TemperatureCharacteristics(params)
         n_Ar_i = n_i * params.X_Ar;
         n_CH4_i = n_i * (1-params.X_Ar);
 
+        %Pull initial mass fraction
+        init_fracs = params.T_initials{im}.Fracs;
+
+
         %Update ode parameters
         odeparams.im = im;
         odeparams.m = m;
@@ -194,6 +198,8 @@ function outputs = TemperatureCharacteristics(params)
                 Xs_zs_T{it}{ix} = interp1(Zs, Xs, zs_interp, interp_method);
                 ts_zs_T{it}{ix} = interp1(Zs, ts, zs_interp, interp_method);
 
+                %Store initial fractions
+
                 %Catch NaNs
                 if any(isnan(Ts_cs_T{it}{ix}))
                     x = 1;
@@ -204,9 +210,6 @@ function outputs = TemperatureCharacteristics(params)
             
 
         end
-
-
-
 
         %Iterate through trailing points
         trail = T_initials.trail;
@@ -339,6 +342,7 @@ function outputs = TemperatureCharacteristics(params)
         Xs_cs{im} = Xs_cs_T;
         Xs_zs{im} = Xs_zs_T;
         DTf(im) = DTf_i;
+        fracs_in{im} = init_fracs;
 
 
         %Plot characteristic plots
@@ -431,6 +435,7 @@ function outputs = TemperatureCharacteristics(params)
     chars.Xs_bs = Xs_bs;
     chars.Xs_cs = Xs_cs;
     chars.Xs_zs = Xs_zs;
+    chars.fracs_in = fracs_in; %
 
     %Merge bins
     params.T_z.chars = chars;
