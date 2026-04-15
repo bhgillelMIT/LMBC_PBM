@@ -62,8 +62,8 @@ function  [T,Y] = PBM_solver(tspan, y0, params, options, varargin)
     dt_i = 0.025; %s
 
     %Specify options for ode solvers
-    ode45opts = odeset('InitialStep', 1e-3, 'MaxStep', params.dt_max, 'RelTol', 1e-4, 'AbsTol', 1e-6, 'Stats','on', 'OutputFcn', @PBM_output);
-    ode15opts = odeset('InitialStep', 1e-3, 'MaxStep', params.dt_max, 'RelTol', 1e-4, 'AbsTol', 1e-6, 'Stats','on', 'OutputFcn', @PBM_output);
+    ode45opts = odeset('InitialStep', params.sol.dt_initial, 'MaxStep', params.dt_max, 'RelTol', 1e-4, 'AbsTol', 1e-6, 'Stats','on', 'OutputFcn', @PBM_output);
+    ode15opts = odeset('InitialStep', params.sol.dt_initial, 'MaxStep', params.dt_max, 'RelTol', 1e-4, 'AbsTol', 1e-6, 'Stats','on', 'OutputFcn', @PBM_output);
 
 
 
@@ -189,7 +189,12 @@ function  [T,Y] = PBM_solver(tspan, y0, params, options, varargin)
             fprintf('PBM - Using Direct Solver (ode15s).\n\n');
 
             %Initialize with ode45 to improve accuracy of Jacobian
-            tspan1 = [tspan(1), 0.05]; %min([0.1, 0.025*tspan(end)])];
+            if params.sol.src_delay > 0
+                tspan1 = [tspan(1), params.sol.src_delay];
+            else
+                tspan1 = [tspan(1), 0.2]; %min([0.1, 0.025*tspan(end)])];
+            end
+            
             [T1,Y1] = ode45(@(t,y) PBM_ode(t,y,params), tspan1, y0, ode45opts);
             ms1 = params.m_total;
 

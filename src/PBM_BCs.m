@@ -13,13 +13,10 @@ function [Nb_i, Fb_i] = PBM_BCs(reactor, mesh, inlet, disc, zs, rms, Vms, T_orif
         tres_o = L_o./ub_o; %s - time a bubble spends in cell
         Vres_o = Vms*tres_o; %m3*s
 
-        Fb_i = (1./(inlet.m.std_i .* sqrt(2.*pi))) .* exp(-0.5 .* ((rms - inlet.m.mu_i).^2)./(inlet.m.std_i.^2)); % # of bubbles/m3 - consider integration approach to  calculating
+        Fb_i = (1./(inlet.d.std_i/2 .* sqrt(2.*pi))) .* exp(-0.5 .* ((rms - inlet.d.mu_i/2).^2)./((inlet.d.std_i./2).^2)); % # of bubbles/m3 - consider integration approach to  calculating
         Nb_i = V_cell_o .* Fb_i; %Initial number of bubbles of each size in the cell
 
-
-        
-
-        %Calculate
+        %Calculate gas holdup
         if inputs.src.solve_alphag
             
             V_dot = sum(Nb_i .* Vms);
@@ -42,9 +39,6 @@ function [Nb_i, Fb_i] = PBM_BCs(reactor, mesh, inlet, disc, zs, rms, Vms, T_orif
             Vs = Nb_i .* Vms;
             V_tot = sum(Vs);
             V_cumsum = cumsum(Vs);
-            
-
-
 
         end
 
@@ -127,7 +121,11 @@ function [Nb_i, Fb_i] = PBM_BCs(reactor, mesh, inlet, disc, zs, rms, Vms, T_orif
             
             Fb_i = zeros(size(Fb_i));
             [nearestval, nearestind] = min(abs(Vms - 1));
-            Fb_i(nearestind) = 1/(disc.Vbs(nearestind+1) - disc.Vbs(nearestind));
+            if Vms(nearestind) > 1
+                Fb_i(nearestind) = 1 .* (disc.Vbs(nearestind+1) - disc.Vbs(nearestind)); %1/(disc.Vbs(nearestind) - disc.Vbs(nearestind-1));
+            else
+                Fb_i(nearestind) = 1 .* (disc.Vbs(nearestind+1) - disc.Vbs(nearestind)); %1/(disc.Vbs(nearestind+1) - disc.Vbs(nearestind));
+            end
 
 
 
@@ -143,7 +141,7 @@ function [Nb_i, Fb_i] = PBM_BCs(reactor, mesh, inlet, disc, zs, rms, Vms, T_orif
         V_cell_o = reactor.Ac * L_o; %m^3 - Volume of boundary cell(s)
         ub_o = CalcVelocities(2.*rms, T_orifice, liquid, p_orifice, fsolve_opts);
         tres_o = L_o./ub_o; %s - time a bubble spends in cell
-        Fb_i = (1./(inlet.m.std_i .* sqrt(2.*pi))) .* exp(-0.5 .* ((rms - inlet.m.mu_i).^2)./(inlet.m.std_i.^2)); % # of bubbles/m3 - consider integration approach to  calculating
+        Fb_i = (1./(inlet.d.std_i/2 .* sqrt(2.*pi))) .* exp(-0.5 .* ((rms - inlet.d.mu_i/2).^2)./((inlet.d.std_i./2).^2)); % # of bubbles/m3 - consider integration approach to  calculating
         Nb_i = V_cell_o .* Fb_i; %Initial number of bubbles of each size in the cell
         Nb_i_leaving = Nb_i .* 1; % 1/s - number of bubbles leaving (and entering) per second
     
@@ -154,7 +152,7 @@ function [Nb_i, Fb_i] = PBM_BCs(reactor, mesh, inlet, disc, zs, rms, Vms, T_orif
        % Vdot_check = Vms(2) * N_bubbles_s;
     
         %Calculate flux
-        gauss_func = @(r) (1./(inlet.m.std_i .* sqrt(2.*pi))) .* exp(-0.5 .* ((r - inlet.m.mu_i).^2)./(inlet.m.std_i.^2));
+        gauss_func = @(r) (1./(inlet.d.std_i/2 .* sqrt(2.*pi))) .* exp(-0.5 .* ((r - inlet.d.mu_i/2).^2)./((inlet.d.std_i/2).^2));
         Nb_i = gauss_func(rms); %1/s - number of bubbles crossing border
         V_dot_i = Nb_i .* Vms; %m3/s
         V_dot = sum(V_dot_i);

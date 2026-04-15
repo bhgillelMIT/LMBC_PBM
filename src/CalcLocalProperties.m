@@ -1,6 +1,14 @@
-function params = CalcLocalProperties(y, params)
+function params = CalcLocalProperties(y, params, local)
 
-    global params
+    %Handle inputs
+    if nargin < 3
+        local = false;
+    end
+
+    %Make params global if not local
+    if ~local
+        global params
+    end
 
     %Resolve local gas velocity
     %params.ug = 0.3; %TEMPORARY
@@ -21,7 +29,7 @@ function params = CalcLocalProperties(y, params)
         cellinds = ((iz-1).*params.Nms + 1):1:(iz.*params.Nms);
 
         %Pull numeric densities in this spatial celll
-        Ns_cell = y(cellinds);
+        Ns_cell = params.Ns_m(cellinds); %y(cellinds);
 
 
         %Calculate gas holdup
@@ -42,6 +50,10 @@ function params = CalcLocalProperties(y, params)
 
             %Calculate current bubble velocities
             if params.sol.solve_ub
+                if ~isreal(params.d_mu(iz,ix))
+                    x = 1;
+                end
+
                 params.uz_mu(iz, ix) = params.ubs.funcs{iz}(params.d_mu(iz, ix));
             else
                 if length(params.sol.ub_manual) == params.Nms
@@ -84,6 +96,10 @@ function params = CalcLocalProperties(y, params)
 
         V_dot_total = sum(V_dot); %m^3/s
 
+        %Calculate gas holdup
+        if V_gas < 0
+            V_gas = 0;
+        end
         params.alpha_g(iz) = V_gas/V_cell;
 
         %Calculate gas superficial velocity in each cell
@@ -92,7 +108,7 @@ function params = CalcLocalProperties(y, params)
 
         %Calculate turbulent energy dissipation
         if params.src.solve_eps
-            params.turb.eps(iz) = params.g * params.ug(iz);
+            params.turb.eps(iz) = params.g * params.ug(iz)+1E-12;
         else
             params.turb.eps(iz) = params.src.eps_manual;
         end
@@ -110,6 +126,15 @@ function params = CalcLocalProperties(y, params)
             x = 1;
         end
         
+    end
+
+    %Check outputs for validity
+    if any(isnan(params.turb.eps) | isnan(params.alpha_g))
+        warning('NaNs in local properites.')
+    elseif params.turb.eps < 0
+        warning('Negative turbulent eps.')
+    elseif any(params.alpha_g < 0)
+        warning('Negative gas holdup.');
     end
 
 end

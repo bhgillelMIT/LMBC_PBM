@@ -17,7 +17,7 @@ function PBM_flowratesweep()
     output_folder = 'Data/Studies/Flow Rate/';
 
     %Test conditions
-    u_spfs = [0.01, 0.02, 0.03, 0.04, 0.05]; %[0.01, 0.03, 0.05, 0.12, 0.16];
+    u_spfs = [0.01, 0.03, 0.05, 0.12, 0.16];
     alpha_gs = [0.038 0.109, 0.154, 0.198, 0.225];
     epss = 10 .* u_spfs;
 
@@ -25,14 +25,17 @@ function PBM_flowratesweep()
     results = cell(1, length(u_spfs));
     ys_out = cell(1, length(u_spfs));
 
-
+    %Initialize inputs and specify coalescence/breakage kernel
+    inputs = PBM_inputs();
+    inputs.src.coalesce_model = 'Wang_2005';
+    inputs.src.breakage_model = 'Luo_Svendson_1996';
 
     %Iterate through cases
     for ic = 1:length(u_spfs)
 
         %Modify inputs
-        inputs = PBM_inputs();
-        inputs.disc.Nms = 60;
+        
+        inputs.disc.Nms = 40;
         inputs.disc.mesh_hybrid_cells = round(inputs.disc.Nms .* 0.5);  
         inputs.reactor.liquid = water;
         inputs.reactor.u_spf_orifice = u_spfs(ic); %m/s
@@ -83,7 +86,7 @@ function PBM_flowratesweep()
                [0.301, 0.745, 0.933]};
 
     %Load data
-    data = load('Data/Studies/Flow Rate/flowrate_2026-03-19-11-55-22.mat'); 
+    data = load('Data/Studies/Flow Rate/flowrate_2026-04-08-10-32-47.mat'); 
     data = data.outstruct;
     %params = load('Data/Studies/Flow Rate/flow_rate_study_params.mat'); 
     %params = params.params;
@@ -141,9 +144,14 @@ function PBM_flowratesweep()
         figure(pdffig);
         Vbs = Vs(2:end) .* y_final;
         V_total = sum(Vbs);
+        V_PDF = Vbs./V_total;
+        V_PDF_sum = sum(V_PDF);
+        V_PDF_trapz = trapz(1000*ds, V_PDF);
+        V_PDF = V_PDF/V_PDF_trapz;
 
-        plot(ds, Vbs./V_total, 'LineWidth', 2, 'Color', colors{i}); hold on;
+        plot(ds, V_PDF, 'LineWidth', 2, 'Color', colors{i}); hold on;
 
+    
     end
 
     %Create legend for actual figure

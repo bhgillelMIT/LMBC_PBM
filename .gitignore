@@ -1,0 +1,7 @@
+*.png
+*.xlsx
+*.asv
+
+Figures/
+Miscellaneous/
+Data/Studies/

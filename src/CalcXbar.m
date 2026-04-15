@@ -1,4 +1,4 @@
-function X_bar = CalcXbar(y_t, iz, im, params)
+function [X_bar, Xs_m, Ns_m] = CalcXbar(y_t, iz, im, params)
 
     
 
@@ -38,8 +38,12 @@ function X_bar = CalcXbar(y_t, iz, im, params)
             %Calculate overall mean
             X_bar = mean(X_mat(:,1)); %mean(mean(X_mat));
 
+            %Output the distribution
+            Xs_m = 0; %TO BE COMPLETED
+            Ns_m = 0;
+
         catch
-            X_bar = 0;
+            X_bar = 0; Xs_m = 0; Ns_m = 0;
         end
     end
 

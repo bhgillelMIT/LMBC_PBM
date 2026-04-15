@@ -176,7 +176,7 @@ function results = PBM_v3(inputs)
     params.sol.rel_tol = 1E-4;
     params.sol.abs_tol = 1E-4;
     params.dt = disc.dt;
-    params.dt_max = 0.01;
+    params.dt_max = inputs.sol.dt_max;
     params.dt_min = 0.000001; 
     params.t_f = sim.t_end;
     params.fsolve_opts = fsolve_opts; 
@@ -199,15 +199,16 @@ function results = PBM_v3(inputs)
     params.sol.solve_details = true;
     params.sol.solve_detail_its = sol.solve_detail_its;
     params.sol.single_layer = sol.single_layer;
+    params.sol.dt_initial = sol.dt_initial;
 
     %Characteristic parameters
-    params.chars.debug = false;
+    params.chars.debug = true;
     params.chars.fig_dir = 'Figures/Characteristics/';
     params.chars.data_dir = folders.char;
     params.chars.print = true;
     params.chars.type = 'LC'; % 'LC' = lumped capacitance (simple); 'SBM' = Single Bubble Model'; '1D' = 1D spherical shell resistance model using LC = R/3
     params.chars.LC_mode = 'Cond'; % 'Conv' = low biot number; 'Cond' = high biot
-    params.chars.load = true;
+    params.chars.load = false;
     params.chars.interp_method = 'linear';
     params.chars.N_Xis = 4;
     params.chars.dT_cutoff = 10; %K - threshold for merging temperature bins
@@ -227,7 +228,7 @@ function results = PBM_v3(inputs)
     params.coalesce.active = inputs.src.coalesce_active;
     %params.coalesce.constant = true; %
     params.coalesce.eddy = true; %Eddy coalescence - true = enabled; false = disabled
-    params.coalesce.wake = false; %Wake entrainment coalescence - true = enabled; false = disabled
+    params.coalesce.wake = true; %Wake entrainment coalescence - true = enabled; false = disabled
     params.coalesce.rise = true; %Coalescence from different rise velocities - true = enabled; false = disabled;
     params.coalesce.damper = 1; %Coalescence rate damper (to help with visualization) - SHOULD BE 1 OTHERWISE
     params.coalesce.We_crit = 100; %Critical weber number for bubble breakup - from Wang et al. 2005
@@ -241,12 +242,13 @@ function results = PBM_v3(inputs)
     params.break.active = inputs.src.breakage_active;
     params.break.debug = false;
     params.break.eddy = true;
-    params.break.surf = true;
+    params.break.surf = false; %true;
     params.break.damper = 1; %Breakage rate damper to help with visualization - SHOULD BE 1 OTHERWISE
     params.break.b_star = 100; %Model parameter - Wang et al 2005
     params.break.m_star = 6.0; %Model parameter - 
     params.break.folder = folders.break;
     params.break.loadfile = true; %Determines if a new interpolation file is first generated - set to true to use the existing file referenced 
+    params.break.stretch_model = true; %Determines if breakage interpolation data is stretched to fit the current spatial mesh if the number of z-layers in the breakage file does not match the current simulation
     params.break.model = inputs.src.breakage_model;
     params.break.type = 'non-uniform'; %Type of breakage - 'uniform' = bubbles are uniformly distributed among smaller sizes; 'non-uniform' = the an exact bubble size distribution, this is slower.
     params.break.int_method = 'trapz'; %Type of integration to use for evaluating integrals in breakage kernels - Options: 'gauss' for gaussian quadrature, 'trapz' for trapezoidal integration
@@ -256,11 +258,13 @@ function results = PBM_v3(inputs)
     params.break.m_snk = zeros(1, 10000);
     params.break.model = inputs.src.breakage_model;
     params.break.constant_rate = inputs.src.breakage_constant_rate;
+    params.break.fv_min = 0.00; %Minimum value of the volume fraction of the daughter bubble size for breakage - used to avoid numerical issues with very small daughter bubbles
+    params.break.fv_limit_mode = 'constant'; %Determines how to treat small bubble fractions for the luo method 
 
 
     %Heat transfer parameters
     params.heat.active =  sol.heat.active;
-    params.heat.source_mode = 'simple'; % Options: 'simple' or 'adaptive'; Details: 'simple' allocation proportional to original allocation for the sink representative mass; 
+    params.heat.source_mode = 'adaptive'; % Options: 'simple' or 'adaptive'; Details: 'simple' allocation proportional to original allocation for the sink representative mass; 
 
 
 
@@ -324,10 +328,17 @@ function results = PBM_v3(inputs)
     params.M_gas_i = params.argon.mol_mass * params.X_Ar + params.methane.mol_mass * (1-params.X_Ar);
     %params.N_volumes = params.N_cells * params.Nms;
     
+    %Define updated call spatial vectors
+    cents_x = repmat(mesh.volcell_cents(:,1)', disc.Nms, 1); cents_x = cents_x(:);
+    cents_y = repmat(mesh.volcell_cents(:,2)', disc.Nms, 1); cents_y = cents_y(:);
+    params.cents_x = cents_x;
+    params.cents_y = cents_y;
+
     %Define heat transfer parameters
     params.dT_end_max = 20; %K - maximum spacing of points at the 
     params.h_conv_const = true;
     params.T_Lz =  @(z) reactor.T .* ones(size(z)); %K - Liquid temperature profile function
+    params.Tsz = params.T_Lz(unique(params.cents_y));
     params.rho_L_T = @(T) reactor.liquid.density(T); %@(T) 6979 - 0.652 * (T - 505.08); %kg/m3 - Liquid density as a function of temperature
     params.T_min = reactor.T_min; %(T_mu - 4*T_std);
     params.T_mu_i = reactor.T_gas_i_mu;
@@ -377,11 +388,11 @@ function results = PBM_v3(inputs)
     Mat_opts.z_dir = 2; % input number to meshgrid corresponding to z-direction (gravity) - 1 = first (columns), 2 = second (rows), 3 = third (depth)
     params.FD_mat = PBM_Mat(mesh, Mat_opts);
 
-    %Define updated call spatial vectors
-    cents_x = repmat(mesh.volcell_cents(:,1)', disc.Nms, 1); cents_x = cents_x(:);
-    cents_y = repmat(mesh.volcell_cents(:,2)', disc.Nms, 1); cents_y = cents_y(:);
-    params.cents_x = cents_x;
-    params.cents_y = cents_y;
+    % %Define updated call spatial vectors
+    % cents_x = repmat(mesh.volcell_cents(:,1)', disc.Nms, 1); cents_x = cents_x(:);
+    % cents_y = repmat(mesh.volcell_cents(:,2)', disc.Nms, 1); cents_y = cents_y(:);
+    % params.cents_x = cents_x;
+    % params.cents_y = cents_y;
 
     
     
@@ -494,6 +505,10 @@ function results = PBM_v3(inputs)
         %PBM_Analysis(params); %Generate plots for evaluating the model inputs
     end
 
+    %Define boundary condition
+    params.N_dot_o = Nb_i/reactor.Ac;
+    params.N_dot_os = CalcInletFluxes(params); %ISSUE TO RESOLVE
+
 
     %Solve bin temperatures
     params = CalcCharTemps(y0, params); %Resolve the middle bin temperature based on those characteristics
@@ -513,9 +528,7 @@ function results = PBM_v3(inputs)
     
     
 
-    %Define boundary condition
-    params.N_dot_o = Nb_i/reactor.Ac;
-    params.N_dot_os = CalcInletFluxes(params); %ISSUE TO RESOLVE
+    
 
     %Debug tests
     %BreakageTest(params);
@@ -530,11 +543,22 @@ function results = PBM_v3(inputs)
         fprintf('PBM Start (t = 0.0000000 s)')
     end    
 
+    %Define timespan - adjust if using advection disabled time 
+    dt_sim = 0.01;
+    if inputs.sol.src_delay > 0
+        tspan_adv = 0:dt_sim:inputs.sol.src_delay;
+        tspan_sol = (tspan_adv(end)+dt_sim):dt_sim:(tspan_adv(end)+sim.t_end);
+        tspan = [tspan_adv, tspan_sol];
+    else
+        tspan = 0:dt_sim:sim.t_end; %tspan = [0, t_end];
+    end
+
+
     %Solve ODE
     params.its = 1;
     t_start = cputime;
-    tspan = 0:0.01:sim.t_end; %tspan = [0, t_end];
-    odeopts = odeset('InitialStep', 1e-3, 'MaxStep', params.dt_max, 'RelTol', 1e-5, 'AbsTol', 1e-5, 'Stats','on', 'OutputFcn', @PBM_output); %, 'NonNegative', 1:length(y0));    
+    
+    odeopts = odeset('InitialStep', 1e-1, 'MaxStep', params.dt_max, 'RelTol', 1e-5, 'AbsTol', 1e-5, 'Stats','on', 'OutputFcn', @PBM_output); %, 'NonNegative', 1:length(y0));    
     [T,Y] = PBM_solver(tspan, y0, params); % [T,Y] = ode45(@(t,y) PBM_ode(t,y,params), tspan, y0, odeopts);
     t_end = cputime; 
     t_run = abs(t_end - t_start); 
@@ -946,9 +970,9 @@ function Tparams_output = InitializeTemperature(params)
         Tparams.core.N_pivots = 3; %Number of pivots per side
         Tparams.core.N_pivots_trail = 3;
         Tparams.core.N_stds = 3;
-        Tparams.trail.dT = 25; %Minimum resolution to maintain
+        Tparams.trail.dT = 20; %Minimum resolution to maintain
         Tparams.trail.dT_init = 5; %Initial spacing of trail points 
-        Tparams.lead.dT = 75;
+        Tparams.lead.dT = 20;
         Tparams = GenerateMovingPivots(Tparams, params);
 
         %Log distribution
@@ -1201,8 +1225,12 @@ function params = LoadTempChars(params)
             if params.chars.load
                 try
                     if strcmp(params.chars.type, 'LC')
-                        filename = sprintf('Chars_%s_Nm=%d_Ti=%d_Tstd=%d_Tl=%d.mat', params.liquid.name, params.Nms,...
-                                           round(params.T_mu_i), params.T_std_i, round(params.T_liq)); %NOTE - Must match spec used in TemperatureCharacteristics.m
+                        filename = sprintf('Chars_%s_H=%g_Nz=%d_Nm=%d_rs=%g-%g_Ti=%d_Tstd=%d_Tl=%d',...
+                            params.liquid.name, params.reactor.H, params.Nz, params.Nms, params.rbs(1),...
+                            params.rbs(end), round(params.T_mu_i), params.T_std_i, round(params.T_liq));
+                        filename = strrep(filename, '.', '*'); filename = [filename, '.mat'];
+                        %filename = sprintf('Chars_%s_Nm=%d_Ti=%d_Tstd=%d_Tl=%d.mat', params.liquid.name, params.Nms,...
+                        %                   round(params.T_mu_i), params.T_std_i, round(params.T_liq)); %NOTE - Must match spec used in TemperatureCharacteristics.m
                         filepath = [params.chars.data_dir, filename];
                         load(filepath);
                         params.T_z.chars = chars;

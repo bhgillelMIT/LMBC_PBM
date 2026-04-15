@@ -278,11 +278,16 @@ function [y0, params, N_volumes_total, Fb_i_out] = InitializeVolumes(params, mes
 
                 %Determine how many temperatures are relevant
                 merged = chars.merged{im};
+                fracs_in = params.T_z.chars.fracs_in{im};
                 bins_in = merged.bins_in(:,iz);
                 NTs = max(bins_in); % - 1 CHECK THIS
                 NXs = 1;
                 Npts = NTs*NXs;
                 N_volumes_layer(iz) = N_volumes_layer(iz) + Npts;
+
+                if length(fracs_in) ~= length(bins_in)
+                    x = 1;
+                end
 
                 %Define indices
                 cellinds_size = iz .* ones(Npts, 1); %[1:mesh.N_cells], disc.Nms, 1); params.cellinds = params.cellinds(:); %Specifies which spatial cell the volume maps to
@@ -366,14 +371,68 @@ function [y0, params, N_volumes_total, Fb_i_out] = InitializeVolumes(params, mes
     %Layout of vector
     % - 4 levels
     %    - level 1 - z layer 
-    %    - level 2 - mass (representative
+    %    - level 2 - mass (representative)
+    %    - level 3 - temperature
+    %    - level 4 - conversion (i.e. reaction extent)
 
     %Create initial "volumes" and specify boundary conditions
     y0 = zeros(N_volumes_total, 1);
     bottom_inds = params.cents_y < min(mesh.volcell_cents(:,2)) + 1E-6;
     if params.sol.orifice_BC_type == 1
-        Fi_bottom = Fb_i; %repmat(Fb_i, 1,);
-        y0(bottom_inds) = Fi_bottom;
+
+        %Set z index
+        iz = 1;
+
+        %Iterate through each mass
+        for im = 1:params.Nms
+
+            %Pull total numeric density for this size
+            Fi_m = Fb_i(im); %1/m3 - Total numeric density for this mass at the boundary
+
+            %Pull initial temperature distribution for this mass
+            if params.heat.active 
+                T_fracs_in = params.T_z.chars.fracs_in{im};
+            else
+                T_fracs_in = 1;
+            end
+
+            %Iterate through each temperature
+            Tinds_m = Tinds(xinds == im);
+            for it = 1:length(Tinds_m)
+
+                %Defien temperature index
+                tind = Tinds_m(it);
+
+                %Define total numeric density for this temperature bin
+                Fi_T = T_fracs_in(it) * Fi_m;
+
+                %Pull the conversion bins within this temperature bin
+                Xinds_m = Xinds(xinds == im & Tinds == tind);
+
+                %Pull initial conversion distribution for this mass -
+                %TEMPORARY UNTIL REACTION IMPLEMENTED
+                X_fracs_in = zeros(1, max(Xinds_m));
+                X_fracs_in(1) = 1; 
+
+                %Iterate through each conversiom
+                for ix = Xinds_m %Needs to be updated for reaction
+
+                    %Pull index of y0
+                    ind = find(zinds == iz & xinds == im & Tinds == tind & Xinds == ix);
+
+                    %Set value
+                    y0(ind) = Fi_T * X_fracs_in(ix);
+
+
+                end
+
+
+            end
+
+
+
+            %y0(bottom_inds) = Fi_bottom;
+        end
     end
 
     %Create storage vector 

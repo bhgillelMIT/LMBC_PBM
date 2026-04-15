@@ -8,14 +8,15 @@ function results = PBM_postprocess(t, y, params)
 
     %Handle no inputs
     if nargin < 1
-        output = load('Data/Solutions/PBM_output_18-Mar-2026_22-50-00.mat'); %load('Data/Solutions/PBM_output_20-Feb-2026_16-00-09.mat');
+        close all 
+        addpath('src/')
+        addpath('Data/Solutions/');
+        output = load('PBM_T=1_X=0_14-Apr-2026_17-56-42.mat'); %load('Data/Solutions/PBM_output_20-Feb-2026_16-00-09.mat');
         output = output.output;
         t = output.T;
         y = output.Y;
         params = output.params;
     end
-
-
 
     %Plot settings
     lw = 1.5;
@@ -56,6 +57,13 @@ function results = PBM_postprocess(t, y, params)
 
 %% Evaluate mass in each level
 
+    %Define reference state for thermodynamic calculations
+    T0 = 293.15;
+    p0 = 101325;
+    
+    %Analysis settings
+    Npts_layer = 30;
+
     %Limit analysis to final (approx. steady) state
     ts = t;
     ts_init = t;
@@ -87,14 +95,23 @@ function results = PBM_postprocess(t, y, params)
     mdists = zeros(params.Nz, params.Nms);
     mdists_norm = mdists;
     Tbars = zeros(params.Nz, params.Nms);
+    Hbars = zeros(params.Nz, params.Nms);
     Xbars = zeros(params.Nz, params.Nms);
+    nCH4s = zeros(params.Nz, params.Nms);
+    nH2s = zeros(params.Nz, params.Nms);
+    nCs = zeros(params.Nz, params.Nms);
+    nArs = zeros(params.Nz, params.Nms);
     Tg = zeros(1, params.Nz);
+    Tg_mix = zeros(1, params.Nz);
+    Tdists = cell(params.Nz, 1);
+    Xdists = Tdists;
+    Hdists = zeros(params.Nz, Npts_layer);
+    Tsms = zeros(params.Nz, Npts_layer);
     Xg = zeros(1, params.Nz); %Overall conversion for each z-level, calculated from the representative mass conversion - IMPROVEMENT: Calculate based on full distribution
+    Xg_mix = zeros(1, params.Nz); %Mole-weighted conversion for each z-level, calculated from the total moles of CH4 and H2 in the gas phase
     %Nbs = zeros(params.Nz, params.Nms); %Storage matrix for numeric density of bubbles in each cell
 
     for iz = 1:params.Nz
-
-
 
         %Pull current z-levels
         zm = params.zms(iz);
@@ -111,6 +128,8 @@ function results = PBM_postprocess(t, y, params)
         mbs = zeros(1, params.Nms);
         Vbs = zeros(1, params.Nms);
         Nbs = zeros(1, params.Nms);
+        Tdists_z = cell(1, params.Nms);
+        Ndists_z = cell(1, params.Nms);
         
         Vdots = Vbs;
         mfluxs = mbs;
@@ -120,10 +139,10 @@ function results = PBM_postprocess(t, y, params)
             m = params.mms(im);
             ni = params.nms(im);
             X_bar = 0.5; %IMPROVEMENT - Create weighted averaging function once temp and conversion implemented
-            T_bar = CalcTbar(y(end,:), y_t, iz, im, params);
-            X_bar = CalcXbar(y_t, iz, im, params);
+            [T_bar, Ts_m, Ns_m] = CalcTbar(y(end,:), y_t, iz, im, params);
+            [X_bar, Xs_m, Ns_m_X] = CalcXbar(y_t, iz, im, params);
             n_Ar = ni * params.X_Ar;
-            n_CH4_i = ni * (1-X_Ar);
+            n_CH4_i = ni * (1-X_Ar); %mols - initial moles of methane in each bubble 
             n_CH4 = (1-X_bar) * n_CH4_i;
             n_H2 = (2*X_bar) * n_CH4_i;
             n_C = X_bar * n_CH4_i;
@@ -134,6 +153,13 @@ function results = PBM_postprocess(t, y, params)
             M_bar = (m_gas)./n_gas;
             V = (n_gas * params.R * T_bar)/p;
             d = (6.*V/pi).^(1/3);
+
+            %Calculate enthalpy for the bubble 
+            H_CH4 = n_CH4 * integral(methane.Cp, T0, T_bar); %J/bubble
+            H_H2 = n_H2 * integral(hydrogen.Cp, T0, T_bar);
+            H_Ar = n_Ar * integral(argon.Cp, T0, T_bar);
+            H_C = n_C * integral(carbon.Cp, T0, T_bar);
+            H_bar = H_CH4 + H_H2 + H_Ar + H_C; %Enthalpy of the bubble based on the gas composition and temperature - I;
 
             %Calculate current velocity
             ub = ub_func(d);
@@ -158,19 +184,131 @@ function results = PBM_postprocess(t, y, params)
             mfluxs(im) = Nfluxs(im) * m_b; %kg/s
             Vdots(im) = Nfluxs(im) * V;
             Tbars(iz,im) = T_bar;
+            Hbars(iz,im) = H_bar;
             Xbars(iz,im) = X_bar;
+            nCH4s(iz,im) = n_CH4;
+            nH2s(iz,im) = n_H2;
+            nCs(iz,im) = n_C;
+            nArs(iz,im) = n_Ar;
+            Tdists_z{im} = Ts_m;
+            Ndists_z{im} = Ns_m;
+            Xdists_z{im} = Xs_m;
+
+
 
             it = it + 1;
 
         end
+
+        %Log results
+        Tdists{iz} = Tdists_z;
+        Ndists{iz} = Ndists_z;
+
+        %Calculate fraction of each size i
+
         dbsout(iz,:) = dbs;
         Vdot(iz) = sum(Vdots);
         Vtot(iz) = sum(Vbs);
         Tg(iz) = Tbars(iz,:) * [Nbs./sum(Nbs)]'; %Weighted average gas temperature for each z-level - UPDATE TO CALCULATE MIXING CUP TEMP
         Xg(iz) = Xbars(iz,:) * [Nbs./sum(Nbs)]';
 
+        %Calculate mean composition of 
+        nCH4g(iz) = nCH4s(iz,:) * Nbs'; %mol/m3 - Total number of moles of CH4 in the gas phase for each z-level, calculated from the representative mass composition and numeric density of bubbles in each cell
+        nH2g(iz) = nH2s(iz,:) * Nbs';
+        nCg(iz) = nCs(iz,:) * Nbs';
+        nArg(iz) = nArs(iz,:) * Nbs';
+
+        %Calculate mole weighted conversion
+        Xg_mix(iz) = (nH2g(iz)/2)./(nCH4g(iz) + nH2g(iz)/2); %Mole-weighted conversion for each z-level, calculated from the total moles of CH4 and H2 in the gas phase
+
+        %Calculate mixing cup temperature of the gas for this later
+        Hg(iz) = Hbars(iz,:) * Nbs'; %J/m3 - total enthalpy of the layer 
+        Tg_func = @(T) nCH4g(iz) * integral(methane.Cp, T0, T) + nH2g(iz) * integral(hydrogen.Cp, T0, T)...
+                     + nCg(iz) * integral(carbon.Cp, T0, T) + nArg(iz) * integral(argon.Cp, T0, T) - Hg(iz);
+        Tg_mix(iz) = fzero(Tg_func, Tg(iz)); %K - mixing cup temperature of the gas, calculated from the total enthalpy and composition of the gas in the layer
+
+        %Calculate total temperature distribution for this layer
+        
+        if params.heat.active
+            
+            T_min_layer = min(Tdists_z{end}); %K - minimum temperature of all bubbles in this layer (found in the largest bubble)
+            T_max_layer = params.T_liq; %K - maximum temperature of all bubbles in this layer (likely liquid temperature)
+            Tsb_layer = linspace(T_min_layer, T_max_layer, Npts_layer+1); %K - a normal temperature distribution for calculating the total temperature distribution
+            Tsm_layer = Tsb_layer(1:end-1) + diff(Tsb_layer)./2;
+            Hdist_layer = zeros(1, Npts_layer); %Storage for the total enthalpy distribution for this layer, calculated by allocating the enthalpy of each bubble into the appropriate temperature bins based on their individual temperature distributions
+            for im = 1:params.Nms
+                Vm = params.Vms(im); %m3 - volume for weighting
+                Tdist = Tdists_z{im};
+                Ndist_T = Ndists_z{im};
+                Xdist = Xdists_z{im};
+                Hdist = zeros(1, length(Tdist));
+
+                %Calculate enthalpy distribution
+                for it = 1:length(Tdist)
+
+                    %Pull temperature distribution
+                    T = Tdist(it);
+                    
+
+                    %Determine mean composition of the gas at this moment -
+                    %TO BE IMPLEMENTED
+                    X_Ar = 0;
+                    X_CH4 = 0;
+                    X_H2 = 2/3;
+                    X_C = 1/3; %Solid carbon enthalpy needs to be accounted for
+
+                    %Calculate enthalpy at this temperature                 
+                    Hdist(it) = X_Ar * integral(argon.Cp,params.T0,T)...
+                        + X_CH4 * integral(methane.Cp,params.T0, T)...
+                        + X_C * integral(carbon.Cp,params.T0, T)...
+                        + X_H2 * integral(hydrogen.Cp,params.T0, T);
+
+                end
+
+                %Calculated weighted enthalpy distribution
+                Hdist = Hdist .* Ndist_T .* Vm;
+
+                %Allocate to bins
+                for itl = 1:Npts_layer
+
+                    %Define bounds
+                    Tu = Tsb_layer(itl+1);
+                    Tl = Tsb_layer(itl);
+
+                    %Determine if any bubbles from this mass fall within the bounds
+                    inds_within = find(Tdist >= Tl & Tdist < Tu);
+
+                    %If so, add their enthalpy to the total enthalpy distribution for this layer
+                    if ~isempty(inds_within)
+                        Hdist_layer(itl) = Hdist_layer(itl) + sum(Hdist(inds_within));
+                    end
+
+
+                end
+
+                x = 1;
+                
+            end
+
+            %Log temperature distributions
+            Tsms(iz,:) = Tsm_layer;
+            Hdists(iz, :) = Hdist_layer;
+
+
+            
+
+        end
+
+        
+
+
+        %Calculate mean diameter
+        dbar(iz) = sum(Nbs .* dbs.^3)./sum(Nbs .* dbs.^2); %m - Sauter mean diameter for each z-level, calculated from the numeric density of bubbles and their diameters
+
+        %Calculate gas holdup, superficial velocity, and average bubble velocity for this layer
         alphag(iz) = Vtot(iz)/params.Vcells(iz);
-        uspf(iz) = Vdot(iz)/params.reactor.Ac;
+        uspf(iz) = Vdot(iz)/params.reactor.Ac; %m/s - superficial velocity for each z-level, calculated from volumetric flow rate and cross-sectional area
+        ub_bar(iz) = uspf(iz)/alphag(iz); %m/s - average bubble velocity for each z-level, calculated from superficial velocity and holdup
         mtot(iz) = sum(mbs);
         mflux(iz) = sum(mfluxs);
 
@@ -206,6 +344,9 @@ function results = PBM_postprocess(t, y, params)
         mdists_normint(iz,:) = mdist./mdist_int;
 
     end
+
+%% 
+
 
 %% Plots
 
@@ -375,53 +516,188 @@ function results = PBM_postprocess(t, y, params)
     grid on; grid minor; axis square;
     xlabel('Diameter (m)'); ylabel('PDF (volume) of d_b 1/m');
 
+%% Plot mean quantities versus height
+
+    if ~params.sol.single_layer
+
+        %Gas holdup and superficial velocity versus height
+        figure('Name', 'Gas Holdup and Superficial Velocity vs Height');
+    
+        subplot(1,2,1)
+        plot(100.*zsc(:,1), alphag, 'LineWidth', lw, 'Color', colors.H2blue); hold on;
+        xlabel('Vertical Position (cm)'); ylabel('Gas Holdup');
+        grid on; grid minor; axis square;
+        title('Gas Holdup vs Height');
+        set(gca, 'FontSize', fs);
+    
+        subplot(1,2,2);
+        plot(100.*zsc(:,1), uspf, 'LineWidth', lw, 'Color', colors.ChiliRed); hold on;
+        xlabel('Vertical Position (cm)'); ylabel('Superficial Velocity (cm/s)');
+        grid on; grid minor; axis square;
+        title('Superficial Velocity vs Height');
+        set(gca, 'FontSize', fs);
+
+        %Plot mean bubble velocity and diameter 
+        figure('Name', 'Mean Bubble Velocity and Diameter vs Height');
+    
+        subplot(1,2,1);
+        plot(100.*zsc(:,1), ub_bar, 'LineWidth', lw, 'Color', colors.MITRed); hold on;
+        xlabel('Vertical Position (cm)'); ylabel('Average Bubble Velocity (cm/s)');
+        grid on; grid minor; axis square;
+        title('Average Bubble Velocity vs Height');
+        set(gca, 'FontSize', fs);
+
+        subplot(1,2,2);
+        plot(100.*zsc(:,1), dbar.*1000, 'LineWidth', lw, 'Color', colors.MITDarkGrey); hold on;
+        xlabel('Vertical Position (cm)'); ylabel('Sauter Mean Diameter (mm)');
+        grid on; grid minor; axis square;
+        title('Sauter Mean Diameter vs Height');
+        set(gca, 'FontSize', fs);
+
+        %Plot gas composition versus height
+        figure()
+
+        subplot(1,2,1);
+        plot(100.*zsc(:,1), nCH4g, 'LineWidth', lw, 'Color', colors.methane); hold on;
+        plot(100.*zsc(:,1), nH2g, 'LineWidth', lw, 'Color', colors.hydrogen); hold on;
+        plot(100.*zsc(:,1), nCg, 'LineWidth', lw, 'Color', colors.raspred); hold on;
+        plot(100.*zsc(:,1), nArg, 'LineWidth', lw, 'Color', colors.navyblue); hold on;
+        xlabel('Vertical Position (cm)'); ylabel('Moles of Species (mol/m3)');
+        grid on; grid minor; axis square;
+        title('Gas Composition vs Height');
+        legend('CH_4', 'H_2', 'C', 'Ar');
+
+        subplot(1,2,2)
+        %plot()
+
+    end
+
 
 
 %% Plot temperature and conversion versus height
 
-    figure();
+    %Create figure
+    figure('Name', 'Temperature and Conversion vs Height');
 
     %Plot settings
     dim = 3;
+
+    %Specify masses to sample
+    msamps = [1, 5:5:params.Nms];
 
     %Specify colors
     
     if params.heat.active
     
         %For a sample of representative masses, plot Tbar and Xbar versus height
-        for im = 1:dim:params.Nms
+        for i = 1:length(msamps)
+
+            %Define mass index
+            im = msamps(i);
+
+            %Plot mean temperature
             subplot(1,2,1)
             plot(100.*zsc(:,1), Tbars(:,im), 'LineWidth', lw); hold on;
+            %plot(100.*zsc(:,1), Tg_mix(:), 'LineWidth', lw); hold on;
+            %plot(100.*zsc(:,1), Tg(:), 'LineWidth', lw, 'Color', colors.MITDarkGrey); hold on;
             xlabel('Vertical Position (cm)'); ylabel('Tbar (K)');
             grid on; grid minor; axis square;
             title('Tbar vs Height');
             set(gca, 'FontSize', fs);
     
+            %Plot mean conversion
             subplot(1,2,2)
             plot(100.*zsc(:,1), 100.*Xbars(:,im), 'LineWidth', lw); hold on;
             xlabel('Vertical Position (cm)'); ylabel('Xbar');
             grid on; grid minor; axis square;
             title('Xbar vs Height');
             set(gca, 'FontSize', fs);
+
+            %Specify legend entires
+            legend_entires{i} = sprintf('im = %d; d = %0.4f m', im, dbsout(end,im));
+
+
         end
 
-        %Plot the weighted average temperature (Tg) and conversion (Xg) versus height
-        figure();
+        %Add legend entires to both plots
         subplot(1,2,1)
-        plot(100.*zsc(:,1), Tg, 'r-', 'LineWidth', lw, 'Color', colors.ChiliRed);
+        legend(legend_entires, 'location', 'southeast');
+        subplot(1,2,2)
+        legend(legend_entires, 'location', 'southeast');
+
+        %Plot the weighted average temperature (Tg) and conversion (Xg) versus height
+        figure('Name', 'Temp. and Conv. vs Height');
+        subplot(1,2,1)
+        plot(100.*zsc(:,1), Tg_mix, 'r-', 'LineWidth', lw, 'Color', colors.ChiliRed); hold on;
+        plot(100.*zsc(:,1), Tg, 'r-', 'LineWidth', lw, 'Color', colors.hydrogen);
         xlabel('Vertical Position (cm)'); ylabel('Tg (K)');
         grid on; grid minor; axis square;
         title('Gas Temp. vs Height');
+        legend('Tg - Mixing Cup Temp', 'Tg - Weighted Avg Temp', 'location', 'southeast');
         set(gca, 'FontSize', fs);
 
         subplot(1,2,2);
-        plot(100.*zsc(:,1), 100.*Xg, 'k-', 'LineWidth', lw);
+        plot(100.*zsc(:,1), 100.*Xg, 'k-', 'LineWidth', lw, 'Color', colors.hydrogen); hold on;
+        plot(100.*zsc(:,1), 100.*Xg_mix, 'r-', 'LineWidth', lw, 'Color', colors.ChiliRed); hold on;
         xlabel('Vertical Position (cm)'); ylabel('Xg');
         grid on; grid minor; axis square;
         title('Gas Conversion vs Height');
+        legend('Xg - Weighted Avg', 'Xg - Mole Weighted', 'location', 'southeast');
         set(gca, 'FontSize', fs);
 
 
     end
+
+
+%% Summary Plot - Multilayer 
+
+if ~params.sol.single_layer
+    %Create figure
+    figure();
+
+    %Plot 3D graph - numeric density versus diameter and height
+    subplot(2,2,1)
+    mesh = params.mesh;
+    zsc = mesh.volcell_cents(:,2);
+    zsc = repmat(zsc, 1, params.Nms);
+    xsc = repmat(dbsout(end,:), mesh.N_cells,1);
+    Yf = mdists;
+    %Yf = reshape(Yf,params.Nms, mesh.N_cells); Yf = Yf';
+    surf(100.*zsc, 100.*xsc, Yf);
+    colormap jet
+    ylabel('Bubble Diameter (cm)')
+    xlabel('Vertical Position (cm)')
+    zlabel('Normalized BSD');
+    set(gca, 'YScale', 'log');
+    axis square
+
+
+    %Plot final bubble size distribution numeric density (yyaxis left) and volume pdf (yyaxis right) for the final z-level 
+    subplot(2,2,2)
+    yyaxis left 
+    plot(dbsout(end,:), mdists(end,:), 'LineWidth', lw, 'Color', colors.H2blue);
+    ylabel('Numeric Density (1/m^3)')
+
+    grid on; grid minor; axis square;
+
+
+    %Plot mixing cup temperature (yyaxis left) and conversion (yyaxis right) versus height 
+    subplot(2,2,3)
+    yyaxis left
+    plot(100.*zsc(:,1), Tg_mix, 'r-', 'LineWidth', lw, 'Color', colors.ChiliRed); hold on;
+    plot(100.*zsc(:,1), Tg, 'r-', 'LineWidth', lw, 'Color', colors.hydrogen);
+    ylabel('Tg (K)')
+    grid on; grid minor; axis square;
+    yyaxis right
+    plot(100.*zsc(:,1), 100.*Xg, 'k-', 'LineWidth', lw, 'Color', colors.hydrogen); hold on;
+    plot(100.*zsc(:,1), 100.*Xg_mix, 'r-', 'LineWidth', lw, 'Color', colors.ChiliRed); hold on;
+    ylabel('Xg')
+    xlabel('Vertical Position (cm)')
+
+
+    %Plot final temperature distribution for the final z-level
+
+
+%% Summary plot - Single-layer
 
 end

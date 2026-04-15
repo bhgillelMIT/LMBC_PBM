@@ -54,6 +54,11 @@ function params = CalcTempConvMeans(y, params)
                     T_bar = mean(relTs(:));
                 end
 
+                %Detect if there is an issue generating T-bar
+                if ~isreal(T_bar)
+                    warning('Imaginary numbers when calculating mean temperature.')
+                end
+
 
                 %Log result
                 %params.Ts(relinds) = Ts;

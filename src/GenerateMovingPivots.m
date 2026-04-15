@@ -109,7 +109,7 @@ function gparams = GenerateMovingPivots(gparams, params)
     gparams.N_Fs = length(gparams.Fps);
 
     %Calculate numeric densities
-    Tms = [gparams.core.Tps, gparams.lead.Tps, gparams.T_liq];
+    Tms = [gparams.core.Tps, gparams.lead.Tps, gparams.T_liq]; 
     dist_func = @(T) 1./(T_std .* sqrt(2.*pi)) .* exp(-0.5 .* ((T - gparams.T_mu).^2)./(gparams.T_std^2));
     Fracs = zeros(1, length(Tms)-1);
     for it = 1:length(Fracs)

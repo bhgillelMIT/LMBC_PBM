@@ -1,7 +1,14 @@
-function [c_src, c_snk, c_mats] = Coalescence(y, params )
+function [c_src, c_snk, c_mats] = Coalescence(y, params, local)
+
+    %Handle less than 3 inputs
+    if nargin < 3
+        local = false;
+    end
 
     %Make parameters global
-    global params
+    if ~local
+        global params
+    end
 
     %Debug message
     if params.debug
@@ -19,6 +26,7 @@ function [c_src, c_snk, c_mats] = Coalescence(y, params )
     c_src = zeros(length(y), 1); %Consider allocating empty vector in the params to avoid having to make a new one each iteration
     c_snk = c_src;
     c_mats = cell(params.Nz, 1);
+    
     
 
     %Determien iz inds to use
@@ -90,16 +98,34 @@ function [c_src, c_snk, c_mats] = Coalescence(y, params )
                         cr_ij(j,k) = c_ijs(3);
                     case 'Scott_1968'
                         c_ij(j,k) = Coalescence_constant(Ns_cell,j,k, iz, params, turb);
+                        cc_ij(j,k) = 0;
+                        cw_ij(j,k) = 0;
+                        cr_ij(j,k) = 0;
                     case 'Hounslow_1988'
                         c_ij(j,k) = Coalescence_constant(Ns_cell,j,k, iz, params, turb);
+                        cc_ij(j,k) = 0;
+                        cw_ij(j,k) = 0;
+                        cr_ij(j,k) = 0;
                 end
                 
             end
         end
 
+        %Handle NaNs
+        if any(isnan(c_ij)) | any(~isreal(c_ij))
+            warning('Issue with coalescence rates.');
+        end
+        
+
+
         if any(c_ij(:) < 0)
             x = 1;
         end
+
+        %Log the rate vectors 
+        mats.cc_ij = cc_ij;
+        mats.cw_ij = cw_ij;
+        mats.cr_ij = cr_ij;
 
 
         %Iterate through internal variables within the cell
@@ -243,6 +269,7 @@ function [c_src, c_snk, c_mats] = Coalescence(y, params )
                 c_mat_src(k, i_larger) = c_mat_src(k, i_larger) + c_jk_larger * Xk;%Mass from larger bubble
              
                 %Subtract bubbles from their original bins
+                c_snk_jk = c_jk * Nj * Nk;                
                 if j == k
                     c_snk(jind) = c_snk(jind) + 2*c_jk * Nj * Nk; 
                 else
@@ -250,7 +277,17 @@ function [c_src, c_snk, c_mats] = Coalescence(y, params )
                     c_snk(kind) = c_snk(kind) + c_jk * Nj * Nk; 
                 end
 
-                %
+                %Store sink term
+                c_jk_total = c_jk_smaller + c_jk_middle + c_jk_larger;
+                X_smaller = c_jk_smaller/(c_jk_total+1E-16);
+                X_middle = c_jk_middle/(c_jk_total+1E-16);
+                X_larger = c_jk_larger/(c_jk_total+1E-16);
+                c_mat_snk(j, i_smaller) = c_mat_snk(j, i_smaller) + c_snk_jk * X_smaller;
+                c_mat_snk(j, i_middle) = c_mat_snk(j, i_middle) + c_snk_jk * X_middle;
+                c_mat_snk(j, i_larger) = c_mat_snk(j, i_larger) + c_snk_jk * X_larger;
+                c_mat_snk(k, i_smaller) = c_mat_snk(k, i_smaller) + c_snk_jk * X_smaller;
+                c_mat_snk(k, i_middle) = c_mat_snk(k, i_middle) + c_snk_jk * X_middle;
+                c_mat_snk(k, i_larger) = c_mat_snk(k, i_larger) + c_snk_jk * X_larger;
                 %c_mat_snk(j) = c_snk(jind)
                 %c_mat_snk(j)
 
@@ -275,10 +312,12 @@ function [c_src, c_snk, c_mats] = Coalescence(y, params )
             x = 1;
         end
 
+        %Store 
+        mats.snk = c_mat_snk; %c_mat.src = c_mat_src;
+        mats.src = c_mat_src; %c_mat.snk = c_mat_snk;
+
         %Store c_mat
-        c_mat.src = c_mat_src;
-        c_mat.snk = c_mat_snk;
-        c_mats{iz} = c_mat_src;
+        c_mats{iz} = mats;
 
 
     end
@@ -299,6 +338,9 @@ function [c_src, c_snk, c_mats] = Coalescence(y, params )
     end
 
 
+    if any(isnan(c_src) | isnan(c_snk))
+        warning('NaNs in Coalescence.')
+    end
     
     %m_src = sum(c_src .* [repmat(params.mms, 1, params.Nz)]');
     %m_snk = sum(c_snk .* [repmat(params.mms, 1, params.Nz)]');
@@ -364,8 +406,8 @@ function [c_jk, c_jks] = Coalescence_Wang(y, j,k, zind, params, turb)
     %   Theoreetical prediction of flow regime ...
     u_bar_j = sqrt(2) .* (turb.eps(zind) .* dj).^(1/3); %Mean turbulent velocity 
     u_bar_k = sqrt(2) .* (turb.eps(zind) .* dk).^(1/3);
-    nj = Nj/params.dbds(zind, j); %params.mds(j);%dbds(j); %CHECK CHECK CHECK
-    nk = Nk/params.dbds(zind, k); % params.mds(k); %dbds(k);  
+    nj = Nj/params.dbds(zind, j) + 1E-16; %params.mds(j);%dbds(j); %CHECK CHECK CHECK
+    nk = Nk/params.dbds(zind, k)+1E-16; % params.mds(k); %dbds(k);  
     hb_jk = 6.3 .* (nj + nk).^(-1/3); 
     lbt_j = sqrt(2) * (turb.eps(zind).*dj).^(1/3) .* (((dj/2).^2)/turb.eps(zind)).^(1/3);
     lbt_k = sqrt(2) * (turb.eps(zind).*dk).^(1/3) .* (((dk/2).^2)/turb.eps(zind)).^(1/3);   
@@ -376,6 +418,10 @@ function [c_jk, c_jks] = Coalescence_Wang(y, j,k, zind, params, turb)
     
 
     %omega_c = (pi/4) .* (dj + dk).^2 .* sqrt(u_bar_k.^2 + u_bar_j.^2);
+
+    if omega_c > 0
+        x = 1;
+    end
 
 
     psi = 1;
@@ -392,11 +438,13 @@ function [c_jk, c_jks] = Coalescence_Wang(y, j,k, zind, params, turb)
     end
 
 
-    if params.coalesce.rise
-        %
+    if params.coalesce.rise & dj ~= dk
+
+        %Calculate velocities
         uj = params.uz_mu(zind, jind);
         uk = params.uz_mu(zind, kind);
     
+        %Calculate rate 
         Pr_jk = 0.5; %Efficiency of coalescence for j and k due to different rise velocities
         cr_jk = (pi/4) .* ((dj + dk).^2) .* abs(uj - uk)*Pr_jk;
     else
@@ -405,52 +453,54 @@ function [c_jk, c_jks] = Coalescence_Wang(y, j,k, zind, params, turb)
 
 
     %Coalescence due to wake entrainment
-    K_w1 = 15.4;
-    K_w2 = 0.46;
-    dc_w = 4 .* sqrt(params.sigmas(zind)./(params.g .* params.rhos_l(i))); %Critica diameter for wake entrainment
-    if dj > (dc_w/2) || dk > (dc_w/2)
-        
-        if dj  < dk
-    
-            %Calculate slip velocity - seems to be for a cap
-            %bubble
-            u_bar_slip = 0.71 .* sqrt(params.g.*dk);
-    
-            %Determine if bubble is above critical size for wake
-            %entrainment
-            if dk >= dc_w/2
-                theta_c = ((dk - dc_w/2).^6)./((dk - dc_w/2).^6 + (dc_w/2).^6);
-            else
-                theta_c = 0;
-            end
-    
-            %Calculate coalescence rate
-           % omega_w = K .* dk.^2 .* u_bar_slip;
-            %cw_jk = 0.0073 * u_bar_slip * theta_c * (params.alpha_g(zind).^2)./dk.^4;
-            cw_jk = K_w1 .* theta_c .* dk.^2 .* u_bar_slip .* exp(-K_w2 .* (((params.rhos_l(zind)^3 .* turb.eps(zind).^2)./(params.sigmas(zind).^3) .* (dj .* dk./(dj + dk)).^5).^(1/6)));    %(params.rhos_l(i).^(0.5) * turb.eps(zind).^(1/3))/sqrt(params.sigmas(i)) .* (dj.*dk./(dj +dk)).^(5/6)); %exp(-K_w2 .* (((params.rhos_l(i).^(3) .* turb.eps(zind).^2)./(params.sigmas(zind).^3)) .* ((dj .* dk)./(dj + dk)).^5).^(1/6));
-    
-        else % j is the larger or equivalent bubble
-    
-            %Calculate slip velocity
-            u_bar_slip = 0.71 .* sqrt(params.g.*dj);
-    
-            %Determine if bubble is above critical size for wake
-            %entrainment
-            if dj >= dc_w/2
-                theta_c = ((dj - dc_w/2).^6)./((dj - dc_w/2).^6 + (dc_w/2).^6);
-            else
-                theta_c = 0;
-            end
-    
-            %Calculate coalescence rate
-           % omega_w = K_ .* dj.^2 .* u_bar_slip;
-            %cw_jk = 0.0073 * u_bar_slip * theta_c * (params.alpha_g(zind).^2)./dj.^4;
-            cw_jk = K_w1 .* theta_c .* dj.^2 .* u_bar_slip .* exp(-K_w2 .* (((params.rhos_l(zind)^3 .* turb.eps(zind).^2)./(params.sigmas(zind).^3) .* (dj .* dk./(dj + dk)).^5).^(1/6)));    %(params.rhos_l(i).^(0.5) * turb.eps(zind).^(1/3))/sqrt(params.sigmas(i)) .* (dj.*dk./(dj +dk)).^(5/6)); %exp(-K_w2 .* (((params.rhos_l(i).^(3) .* turb.eps(zind).^2)./(params.sigmas(zind).^3)) .* ((dj .* dk)./(dj + dk)).^5).^(1/6));
-    %cw_jk = K_w1 .* theta_c .* dj.^2 .* u_bar_slip .* exp(-K_w2 .* (params.rhos_l(i).^(0.5) * turb.eps(zind).^(1/3))/sqrt(params.sigmas(i)) .* (dj.*dk./(dj +dk)).^(5/6)); %exp(-K_w2 .* (((params.rhos_l(i).^(3) .* turb.eps(zind).^2)./(params.sigmas(zind).^3)) .* ((dk .* dj)./(dk + dj)).^5).^(1/6));
-        end
-    else
-        cw_jk = 0;
-    end
+    cw_jk = Coalescence_wake_Wang(dj, dk, turb, zind, i, params);
+
+    % K_w1 = 0.151; %15.4;
+    % K_w2 = 0.46;
+    % dc_w = 4 .* sqrt(params.sigmas(zind)./(params.g .* params.rhos_l(i))); %Critica diameter for wake entrainment
+    % if dj > (dc_w/2) || dk > (dc_w/2)
+    % 
+    %     if dj  < dk
+    % 
+    %         %Calculate slip velocity - seems to be for a cap
+    %         %bubble
+    %         u_bar_slip = 0.71 .* sqrt(params.g.*dk);
+    % 
+    %         %Determine if bubble is above critical size for wake
+    %         %entrainment
+    %         if dk >= dc_w/2
+    %             theta_c = ((dk - dc_w/2).^6)./((dk - dc_w/2).^6 + (dc_w/2).^6);
+    %         else
+    %             theta_c = 0;
+    %         end
+    % 
+    %         %Calculate coalescence rate
+    %        % omega_w = K .* dk.^2 .* u_bar_slip;
+    %         %cw_jk = 0.0073 * u_bar_slip * theta_c * (params.alpha_g(zind).^2)./dk.^4;
+    %         cw_jk = K_w1 .* theta_c .* dk.^2 .* u_bar_slip .* exp(-K_w2 .* (((params.rhos_l(zind)^3 .* turb.eps(zind).^2)./(params.sigmas(zind).^3) .* (dj .* dk./(dj + dk)).^5).^(1/6)));    %(params.rhos_l(i).^(0.5) * turb.eps(zind).^(1/3))/sqrt(params.sigmas(i)) .* (dj.*dk./(dj +dk)).^(5/6)); %exp(-K_w2 .* (((params.rhos_l(i).^(3) .* turb.eps(zind).^2)./(params.sigmas(zind).^3)) .* ((dj .* dk)./(dj + dk)).^5).^(1/6));
+    % 
+    %     else % j is the larger or equivalent bubble
+    % 
+    %         %Calculate slip velocity
+    %         u_bar_slip = 0.71 .* sqrt(params.g.*dj);
+    % 
+    %         %Determine if bubble is above critical size for wake
+    %         %entrainment
+    %         if dj >= dc_w/2
+    %             theta_c = ((dj - dc_w/2).^6)./((dj - dc_w/2).^6 + (dc_w/2).^6);
+    %         else
+    %             theta_c = 0;
+    %         end
+    % 
+    %         %Calculate coalescence rate
+    %        % omega_w = K_ .* dj.^2 .* u_bar_slip;
+    %         %cw_jk = 0.0073 * u_bar_slip * theta_c * (params.alpha_g(zind).^2)./dj.^4;
+    %         cw_jk = K_w1 .* theta_c .* dj.^2 .* u_bar_slip .* exp(-K_w2 .* (((params.rhos_l(zind)^3 .* turb.eps(zind).^2)./(params.sigmas(zind).^3) .* (dj .* dk./(dj + dk)).^5).^(1/6)));    %(params.rhos_l(i).^(0.5) * turb.eps(zind).^(1/3))/sqrt(params.sigmas(i)) .* (dj.*dk./(dj +dk)).^(5/6)); %exp(-K_w2 .* (((params.rhos_l(i).^(3) .* turb.eps(zind).^2)./(params.sigmas(zind).^3)) .* ((dj .* dk)./(dj + dk)).^5).^(1/6));
+    % %cw_jk = K_w1 .* theta_c .* dj.^2 .* u_bar_slip .* exp(-K_w2 .* (params.rhos_l(i).^(0.5) * turb.eps(zind).^(1/3))/sqrt(params.sigmas(i)) .* (dj.*dk./(dj +dk)).^(5/6)); %exp(-K_w2 .* (((params.rhos_l(i).^(3) .* turb.eps(zind).^2)./(params.sigmas(zind).^3)) .* ((dk .* dj)./(dk + dj)).^5).^(1/6));
+    %     end
+    % else
+    %     cw_jk = 0;
+    % end
 
     %Scale wake down
     %cw_jk = 0.006 * cw_jk; %TEMPORARY
@@ -501,6 +551,11 @@ function [c_jk, c_jks] = Coalescence_Wang(y, j,k, zind, params, turb)
         x = 1;
     end
 
+
+    if isnan(c_jk)
+        x = 1;
+
+    end
 
 
 end

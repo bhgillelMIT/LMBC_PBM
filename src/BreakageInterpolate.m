@@ -7,7 +7,13 @@ function [beta_eddy, beta_ratio, b_eddy] = BreakageInterpolate(d, turb_eps, iz, 
         iz_ind = iz;
     end
 
+    %Copy inputs
+    d_in = d;
+    turb_eps_in = turb_eps;
 
+    if turb_eps < 0
+        turb_eps = 0;
+    end
 
     %Pull range from 
     d_range = params.break.funcs_d_range;
@@ -67,7 +73,7 @@ function [beta_eddy, beta_ratio, b_eddy] = BreakageInterpolate(d, turb_eps, iz, 
             %Calculate functions
             beta_eddy = params.break.funcs{iz_ind}{inds}.betas(d, turb_eps, params.fvs_norm_all);
             beta_eddy = beta_eddy(:);
-            b_eddy = params.break.funcs{iz_ind}{inds}.b_eddy(d, turb_eps);
+            b_eddy = 0; %params.break.funcs{iz_ind}{inds}.b_eddy(d, turb_eps); - NOT IMPLEMENTED YET
             beta_ratio = 0;
 
             if ~any(inds_valid)

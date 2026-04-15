@@ -16,10 +16,10 @@ function inputs = PBM_inputs()
     water.name = 'water';
 
     %Main settings
-    sim.t_end = 10;
-    reactor.u_spf_orifice = 0.0037; %m/s
-    inlet.m.mu_i = 0.006; %0.003;
-    inlet.m.std_i = 0.00075; %%0.00075;
+    sim.t_end = 3;
+    reactor.u_spf_orifice = 0.03; %m/s
+    inlet.d.mu_i = 0.003; %0.003;
+    inlet.d.std_i = 0.0005; %%0.00075;
 
     %Animation settings
     animate.active = true;
@@ -37,21 +37,21 @@ function inputs = PBM_inputs()
     %Geometry
     reactor.D = 0.15;
     reactor.R = reactor.D./2;
-    reactor.H = 0.3;
+    reactor.H = 0.1;
     reactor.Ac = pi .* reactor.R^2;
 
     %Operating parameters
-    reactor.T = 293.15; %1300 + 273.15;
+    reactor.T = 1473.15; %1200 + 273.15;
     reactor.T_orifice = reactor.T;
-    reactor.T_min = 273.15; %800 + 273.15;
+    reactor.T_min = 800 + 273.15;
     reactor.X_Ar = 0.9;
     
     reactor.p_surf = 101325;
     reactor.M_gas = 0.016;
-    reactor.liquid = water;
-    reactor.T_gas_i_mu = 293.15; %1000 + 273.15;
-    reactor.T_gas_i_std = 2; %15;
-    reactor.T_min_i = reactor.T_min; %800 + 273.15; %Minimum temperature to consider for heat transfer
+    reactor.liquid = tin;
+    reactor.T_gas_i_mu = 1173.15; %1000 + 273.15;
+    reactor.T_gas_i_std = 15; %15;
+    reactor.T_min_i = 700 + 273.15; %reactor.T_min; %800 + 273.15; %Minimum temperature to consider for heat transfer
     
 
     % %Calculate reactor floew rate
@@ -64,8 +64,8 @@ function inputs = PBM_inputs()
     mmesh.hybrid_cells_frac = 0.5;
     mmesh.input = 'Radius'; %Options: 'Radius', 'Volume'
     disc.Nr = 1;
-    disc.Nz = 10; 
-    disc.Nms = 50;
+    disc.Nz = 10; %Number of layers in the model. Can be 1 or 3 or greater. CANNOT BE 2
+    disc.Nms = 30;
     disc.Nrs = disc.Nms; % # of discrete volumes considered
     disc.mesh_hybrid_cells = round(disc.Nms .* mmesh.hybrid_cells_frac);  
     disc.r_min = 0.5 .* 0.001; %m - smallest size of bubble to consider
@@ -89,24 +89,27 @@ function inputs = PBM_inputs()
     src.breakage_constant_rate = 1;
     src.coalesce_active = true;
     src.breakage_active = true;
-    src.radial_active = true;
-    src.radial_alpha_g_func = @(x) 
-    src.radial_ul_fnc
+    src.radial_active = false;
+    src.radial_alpha_g_func = @(x) 1;
+    src.radial_ul_fnc = @(x) 1;
+    src.c_wake = 1;
    
 
     %Soler controls
     sol.type = 'direct';
     sol.scheme = 'Upwind';
-    sol.heat.active = false; %boolean - Determines if heat transfer is considered in the simulation
+    sol.heat.active = true; %boolean - Determines if heat transfer is considered in the simulation
     sol.react.active = false; %boolean - Determines if the reaction is considered in the simulation
     sol.solve_ub = true; %boolean - Determines if the bubble velocity is solved each iteration, or imposed initially - used only for test cases
     sol.ub_manual = 0.3; %m/s - Velocity of bubbles; Must either be a single value (in which case all bubbles travel at the same velocity), or a vector with a length matching the number of representative masses (params.Nms)
     sol.solve_detail_its = 1; %iterations - number of iterations between calculations of certain quantities in the simulation that have significant costs  associated with them. Use the most recent value 
-    sol.disable_advection = false;
-    sol.disable_advection_t = 10;
-    sol.single_layer = true ;
+    sol.disable_advection = false; %Determines if 
+    sol.disable_advection_t = 3;
+    sol.single_layer = false;
     sol.orifice_BC_type = 2;
     sol.break_file = 'break_tin_Nd-25_Nz-1_Ne-25_TL-1573.mat';
+    sol.dt_initial = 0.001;
+    sol.dt_max = 0.01;
 
     %Boundary conditions
     

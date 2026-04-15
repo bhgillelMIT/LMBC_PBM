@@ -18,6 +18,7 @@ function BreakageTest(params)
 %% Test Luo Svendsen (1997)
 
 if strcmp(params.break.model, 'Luo_Svendson_1996')
+
     %Define test cases 
     eps = [0.5, 1];
     ds = [0.003, 0.006];
@@ -81,7 +82,10 @@ end
 
 params.break.model = 'Wang_2005';
 
-if strcmp(params.break.model, 'Wang_2005') & false
+if strcmp(params.break.model, 'Wang_2005') & true
+
+
+    %COnditions for normal breakage rate reference
     epss = [0.25, 0.5, 1.0, 2.0];
     ds = 0.001:0.001:0.01;
     alpha = 0.05;
@@ -99,11 +103,11 @@ if strcmp(params.break.model, 'Wang_2005') & false
         for id = 1:length(ds)
 
             %Pull test values
-            eps = epss(ie);
+            turb_eps = epss(ie);
             d = ds(id);
         
             %Calculate quantities
-             [beta_eddy, beta_ratio] = BreakageInterpolate(d, eps, iz, params);
+             [beta_eddy, beta_ratio] = BreakageInterpolate(d, turb_eps, iz, params);
 
             
             %beta_ratio = params.break.beta_ratio{1}(d, eps);
@@ -116,32 +120,32 @@ if strcmp(params.break.model, 'Wang_2005') & false
             end
 
             %Calculate test quantity
-            params.turb.eps = eps;
+            params.turb.eps = turb_eps;
             N = 1 .* ones(1, params.Nms);
             b_eddy = BreakageEddySimple(1, 10, d, N, beta_ratio, beta_eddy, params);
             bd_norm(ie, id) = b_eddy./((1-alpha)*N(1));
 
 
             %Calculate kolmogorov length scale
-            lambda_komogorov = ((params.nus.^3)./(eps+1E-8)).^0.25; %m
+            lambda_komogorov = ((params.nus.^3)./(turb_eps+1E-8)).^0.25; %m
             lambda_min = 31.4 * lambda_komogorov; %Minimum eddy diameter to break a bubble - integrate up to bubble diameter 
 
 
-            %Calculate quantity more rigorously
-            if detailed
-                b_eddy_act = BreakageEddyAlt(1, 10, d, N, lambda_min, params.break.N_lambdas, params);
-                err = abs(b_eddy - b_eddy_act)./b_eddy_act;
-                if err > 0.0001
-                    ratio = b_eddy_act/b_eddy;
-                    x = 1;
-                end
-                errs(ie, id) = err;
-
-                bd_act_norm(ie, id) = b_eddy_act./((1-alpha)*N(1));
-
-            else
-                errs(ie, id) = 0;
-            end
+            % %Calculate quantity more rigorously
+            % if detailed
+            %     b_eddy_act = BreakageEddyAlt(1, 10, d, N, lambda_min, params.break.N_lambdas, params);
+            %     err = abs(b_eddy - b_eddy_act)./b_eddy_act;
+            %     if err > 0.0001
+            %         ratio = b_eddy_act/b_eddy;
+            %         x = 1;
+            %     end
+            %     errs(ie, id) = err;
+            % 
+            %     bd_act_norm(ie, id) = b_eddy_act./((1-alpha)*N(1));
+            % 
+            % else
+            %     errs(ie, id) = 0;
+            % end
 
         end
     end
@@ -177,6 +181,101 @@ if strcmp(params.break.model, 'Wang_2005') & false
     legend(h, 'Interpolated', 'Actual', '\epsilon = 0.25 m^2/s^3', '\epsilon = 0.5 m^2/s^3', '\epsilon = 1.0 m^2/s^3', '\epsilon = 2.0 m^2/s^3', 'location', 'northwest');
     %legend('\epsilon = 0.25 m^2/s^3', '\epsilon = 0.5 m^2/s^3', '\epsilon = 1.0 m^2/s^3', '\epsilon = 2.0 m^2/s^3', 'location', 'northwest');
     set(gca, 'FontSize', fs, 'FontWeight', 'bold');
+
+
+    %Conditions for reference case from Y Liao and D Lucas (2009) - alpha = 0.1
+    epss = [1, 5];
+    ds = 0.001:0.001:0.049;
+
+    %Define parameters and set gas holdup
+    paramsin = params;
+    paramsin.alpha_g(:) = 0.1;
+
+    %Create storage vectors
+    bd_eps = zeros(length(epss), length(ds));
+
+    for ie = 1:length(epss);
+        for id = 1:length(ds)
+
+            %Pull test values
+            turb_eps = epss(ie);
+            d = ds(id);
+        
+            %Calculate quantities
+            paramsin.turb.eps = turb_eps;
+             [beta_eddy, beta_ratio] = BreakageInterpolate(d, turb_eps, iz, params);
+
+            if any(isnan(beta_eddy))
+                beta_eddy = zeros(size(beta_eddy));
+                beta_ratio = 0;
+            end
+
+            %Store value
+            bd_eps(ie, id) = b_eddy;
+
+        end
+    end
+
+    %Plot results
+    figure('Name', 'Breakage Tests - Wang from Liao and Lucas', 'Units', 'normalized', 'Outerposition', [0 0 1 1]);  
+    plot(ds, bd_eps(1,:), 'k--','LineWidth', lw); hold on;
+    plot(ds, bd_eps(2,:), 'k-','LineWidth', lw); hold on;
+    %plot(ds, bd_eps(3,:), 'k:','LineWidth', lw); hold on;
+    xlabel('Diameter (m)'); ylabel('Breakage Rate (1/s)');
+    title('Breakage Rate vs Diameter');
+    legend('\epsilon = 1 m^2/s^3', '\epsilon = 5 m^2/s^3', '\epsilon = 10 m^2/s^3', 'location', 'northeast');
+    grid on; grid minor; axis square;
+    set(gca, 'FontSize', fs, 'FontWeight', 'bold');
+
+    %Conditions for reference case from Y Liao and D Lucas (2009) - eps = 1; alpha = 0.1, 0.2, 0.3
+    alphas = [0.1, 0.2, 0.3];
+    ds = 0.001:0.001:0.049;
+
+    %Set parameters and turbulence
+    paramsin.turb.eps = 1;
+
+    %Create storage vectors
+    bd_alpha = zeros(length(alphas), length(ds));
+
+    %Iterate through cases
+    for ia = 1:length(alphas);
+        for id = 1:length(ds)
+
+            %Pull test values
+            alpha = alphas(ia);
+            d = ds(id);
+        
+            %Calculate quantities
+            paramsin.alpha_g(:) = alpha;
+            [beta_eddy, beta_ratio] = BreakageInterpolate(d, paramsin.turb.eps, iz, params);
+
+            if any(isnan(beta_eddy))
+                beta_eddy = zeros(size(beta_eddy));
+                beta_ratio = 0;
+            end
+
+            %Store value
+            bd_alpha(ia, id) = b_eddy;
+
+        end
+    end
+
+    %Plot results
+    figure('Name', 'Breakage Tests - Wang from Liao and Lucas - Alpha', 'Units', 'normalized', 'Outerposition', [0 0 1 1]);
+    plot(ds, bd_alpha(1,:), 'k--','LineWidth', lw); hold on;
+    plot(ds, bd_alpha(2,:), 'k-','LineWidth', lw); hold on;
+    plot(ds, bd_alpha(3,:), 'k:','LineWidth', lw); hold on;
+    xlabel('Diameter (m)'); ylabel('Breakage Rate (1/s)');
+    title('Breakage Rate vs Diameter');
+    legend('\alpha = 0.1', '\alpha = 0.2', '\alpha = 0.3', 'location', 'northeast');
+    grid on; grid minor; axis square;
+    set(gca, 'FontSize', fs, 'FontWeight', 'bold');
+
+
+
+
+
+
 end
     
 %% BSD Tests
@@ -227,7 +326,7 @@ end
     pause(1);
 
 
-%% Compare Wang and Luo models for the same conditions 
+%% Compare BSDS from Wang and Luo models for the same conditions 
 
     %Create new figure
     figure('Name', 'Wang vs Luo Breakage', 'Units', 'normalized', 'Outerposition', [0 0 1 1]);
@@ -302,11 +401,150 @@ end
     end
 
    
+%% Compare breakage rates from Wang and Luo models 
+
+    ds = [0.0025, 0.01];
+    epss = 0.1:0.1:5;
+    alpha_gs = [0.05, 0.15, 0.25];
 
     
 
+    %Iterate through cases
+    for id = 1:length(ds)
+
+        %Create storage vectors
+        b_wangs = zeros(length(alpha_gs), length(epss));
+        b_luos = zeros(length(alpha_gs), length(epss));
+
+        %Iterate through turbulent dissipation rates and gas holdups
+        for ie = 1:length(epss)
+            for ia = 1:length(alpha_gs)
+
+                %Pull test values
+                d = ds(id);
+                turb_eps = epss(ie);
+                alpha_g = alpha_gs(ia);
+
+                %Calculate kolmogorov length scale
+                lambda_komogorov = ((params.nus.^3)./(turb_eps+1E-8)).^0.25; %m
+                lambda_min = 31.4 * lambda_komogorov; %Minimum eddy diameter to break a bubble - integrate up to bubble diameter 
+            
+                %Update params
+                paramsin = params;
+                paramsin.turb.eps = turb_eps;
+                paramsin.alpha_g(:) = alpha_g;
+
+                %Calculate Wang result
+                [beta_wang, beta_ratio, ~] = BreakageInterpolate(d, turb_eps, 1, paramsin);
+                paramsin.turb.eps = turb_eps;
+                paramsin.alpha_g = alpha_g;
+                N = 1 .* ones(1, params.Nms);
+                b_eddy_wang = BreakageEddySimple(1, 10, d, N, beta_ratio, beta_wang, paramsin);
+
+                %Calculate Luo result
+                [b_eddy_luo, beta_luo] = BreakageLuoSvendson(1, 1, d, 1, lambda_min, params.break.N_lambdas, paramsin);
     
+                %Log results
+                b_wangs(ia, ie) = b_eddy_wang;
+                b_luos(ia, ie) = b_eddy_luo;
+
+            end
+        end
+
+        %Plot results for this diameter
+        figname = sprintf('D = %0.4f m', ds(id));
+        figure('Name', figname);
+        
+        plot(epss, b_wangs(1,:), 'k:', 'LineWidth', lw, 'Color', colors.hydrogen); hold on;
+        plot(epss, b_wangs(2,:), 'k-', 'LineWidth', lw, 'Color', colors.hydrogen); 
+        plot(epss, b_wangs(3,:), 'k--', 'LineWidth', lw, 'Color', colors.hydrogen); 
+
+        plot(epss, b_luos(1,:), 'k:', 'LineWidth', lw, 'Color', colors.ChiliRed); hold on;
+        plot(epss, b_luos(2,:), 'k-', 'LineWidth', lw, 'Color', colors.ChiliRed); 
+        plot(epss, b_luos(3,:), 'k--', 'LineWidth', lw, 'Color', colors.ChiliRed);
+
+        grid on; grid minor; axis square;
+        xlabel('Turbulent Dissipation Rate (m^2/s^3)'); ylabel('Breakage Rate (1/s)');
+        title('Breakage Rate vs Turb. Energy Dissipation Rate (D = ' + string(ds(id)) + ' m)');
+        %legend('\alpha_g = 0.05', '\alpha_g = 0.15', '\alpha_g = 0.25', 'location', 'northwest');
+        set(gca, 'FontSize', fs, 'FontWeight', 'bold');
+
+        h = zeros(1,5);
+        h(1) = plot(nan, nan, 'k.', 'LineWidth', lw, 'MarkerSize', 24, 'Color', colors.hydrogen); hold on;
+        h(2) = plot(nan, nan, 'k.', 'LineWidth', lw, 'MarkerSize', 24, 'Color', colors.ChiliRed); hold on;
+        h(3) = plot(nan, nan, 'k:', 'LineWidth', lw); hold on;
+        h(4) = plot(nan, nan, 'k-', 'LineWidth', lw); hold on;
+        h(5) = plot(nan, nan, 'k--', 'LineWidth', lw); hold on;
+        legend(h, 'Wang', 'Luo', '\alpha_g = 0.05', '\alpha_g = 0.15', '\alpha_g = 0.25', 'location', 'northwest');
+
+
+
+    end
     
+%% Compare breakage rates from Wang and Luo models for a single case
+
+    %Define test case
+    ds = 0.001:0.001:0.025;
+    turb_epss =[1, 5];
+    alpha_g = 0.1;
+
+    %Create storage vectors
+    b_wangs = zeros(length(turb_epss), length(ds));
+    b_luos = zeros(length(turb_epss), length(ds));
+
+    %Iterate through cases
+    for ie = 1:length(turb_epss)
+        for id = 1:length(ds)
+
+            %Pull test values
+            d = ds(id);
+            turb_eps = turb_epss(ie);
+
+            %Calculate kolmogorov length scale
+            lambda_komogorov = ((params.nus.^3)./(turb_eps+1E-8)).^0.25; %m
+            lambda_min = 31.4 * lambda_komogorov; 31.4 * lambda_komogorov; %Minimum eddy diameter to break a bubble - integrate up to bubble diameter 
+
+            %Update params
+            paramsin = params;
+            paramsin.turb.eps = turb_eps;
+            paramsin.alpha_g(:) = alpha_g;
+
+            %Calculate Wang result
+            [beta_wang, beta_ratio, ~] = BreakageInterpolate(d, turb_eps, 1, paramsin);
+            paramsin.turb.eps = turb_eps;
+            paramsin.alpha_g = alpha_g;
+            N = 1 .* ones(1, params.Nms);
+            b_eddy_wang = BreakageEddySimple(1, 10, d, N, beta_ratio, beta_wang, paramsin);
+
+            %Calculate Luo result
+            [b_eddy_luo, beta_luo] = BreakageLuoSvendson(1, 1, d, 1, lambda_min, params.break.N_lambdas, paramsin);
+
+            %Log results
+            b_wangs(ie, id) = b_eddy_wang;
+            b_luos(ie, id) = b_eddy_luo;
+
+        end
+    end
+
+    %Plot results
+    figure('Name', 'Wang vs Luo Breakage Rates', 'Units', 'normalized', 'Outerposition', [0 0 1 1]);
+    plot(ds, b_wangs(1,:), 'k:', 'LineWidth', lw, 'Color', colors.hydrogen); hold on;
+    plot(ds, b_wangs(2,:), 'k-', 'LineWidth', lw, 'Color', colors.hydrogen); 
+    %plot(ds, b_wangs(3,:), 'k--', 'LineWidth', lw, 'Color', colors.hydrogen);   
+    plot(ds, b_luos(1,:), 'k:', 'LineWidth', lw, 'Color', colors.ChiliRed); hold on;
+    plot(ds, b_luos(2,:), 'k-', 'LineWidth', lw, 'Color', colors.ChiliRed); 
+    %plot(ds, b_luos(3,:), 'k--', 'LineWidth', lw, 'Color', colors.ChiliRed);    
+    grid on; grid minor; axis square;
+    xlabel('Diameter (m)'); ylabel('Breakage Rate (1/s)');  
+    title('Breakage Rate vs Diameter (\alpha_g = 0.1)');
+    h = zeros(1,4);
+    h(1) = plot(nan, nan, 'k.', 'LineWidth', lw, 'MarkerSize', 24, 'Color', colors.hydrogen); hold on;
+    h(2) = plot(nan, nan, 'k.', 'LineWidth', lw, 'MarkerSize', 24, 'Color', colors.ChiliRed); hold on;
+    h(3) = plot(nan, nan, 'k:', 'LineWidth', lw); hold on;
+    h(4) = plot(nan, nan, 'k-', 'LineWidth', lw); hold on;
+    
+    legend(h, 'Wang', 'Luo', '\epsilon = 1 m^2/s^3', '\epsilon = 5 m^2/s^3', 'location', 'northwest');
+    set(gca, 'FontSize', fs, 'FontWeight', 'bold');
 
 
 end
@@ -327,7 +565,7 @@ function b_eddy = BreakageEddySimple(iz, im, d, Ns_cell, beta_ratio, beta_eddy, 
     it_total = 1;
 
     %Calculate integral
-    b_fvd = params.break.bfd_zero;
+    %b_fvd = params.break.bfd_zero;
     int_lambda_fvs = beta_ratio .* beta_eddy(1:length(params.fvs_norm));
     b_fvd = 0.923 .* (1 - params.alpha_g(iz)) .* Ns_cell(im) .* params.turb.eps(iz).^(1/3)  .* int_lambda_fvs;
 

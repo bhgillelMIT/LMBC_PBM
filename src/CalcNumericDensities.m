@@ -73,5 +73,9 @@ function [Ns_z, Ns_m, Ns_T, Ns_fracs] = CalcNumericDensities(y, params)
         end
     end
 
+    if any(isnan(Ns_m))
+        warning('NaNs in CalcNumericDensity.m');
+    end
+
 
 end

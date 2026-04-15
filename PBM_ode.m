@@ -44,7 +44,7 @@ function dydt = PBM_ode(t,y, params)
     params = CalcTempConvMeans(Fs, params);
 
     %Calculate total numeric density for each 
-    [params.Ns_z, params.Ns_m, params.Ns_T, params.Ns_fracs] = CalcNumericDensities(y, params);
+    [params.Ns_z, params.Ns_m, params.Ns_T, params.Ns_fracs] = CalcNumericDensities(F, params);
 
     %Identify indices for inlet
     inlet_inds = find(params.zinds == 1); 
@@ -181,67 +181,14 @@ function dydt = PBM_ode(t,y, params)
     params = CalcLocalProperties(Fs, params); %gas fraction, turbulence, etc.   %params.uzs = 1;
 
     %Calculate source terms
-    if t < params.sol.src_delay
-        h = zeros(size(F));
-    else
-        params.src.its = params.src.its + 1;
-        cadd = zeros(length(F), 1); csub = cadd;
-        badd = cadd; bsub = cadd;
-        if params.coalesce.active
-            [cadd, csub, cmats] = Coalescence(params.Ns_m, params); %Coalescence(Fs, params );  
-            cadd = cadd * params.coalesce.damper; %Damper is only used for debugging
-            csub = csub * params.coalesce.damper;
-            params.cmats = cmats; %Store for heat/reaction calculations
-        end
-        if params.break.active
-            if params.sol.solve_details
-                [badd, bsub, bmats] = Breakage(params.Ns_m, params); %Breakage(Fs, params);
-                params.break.badd = badd;
-                params.break.bsub = bsub;
-                params.bmats = bmats;
-            else
-                badd = params.break.badd;
-                bsub = params.break.bsub;
-            end
-            badd = params.break.damper * badd;
-            bsub = params.break.damper * bsub;
-        end
+    [h, h_m, cadd, csub, badd, bsub, params] = CalcSourceTerms(t, F, params);
 
-        %Distribute
-        if params.heat.active
-            h = params.h;
-
-            h_m = cadd(:) - csub(:) + badd(:) - bsub(:);
-
-            %Store in params
-            params.cadd = cadd; params.csub = csub;
-            params.badd = badd; params.bsub = bsub;
-
-            %Function to distribute proportionally
-            h = DistSourceTerms(y, h_m, params);
-
-
-            %Iterate through bins and allocate
-            ind = 1; %index for coalescence and breakage vectors 
-            for iz = 1:params.Nz
-                for im = 1:params.Nms
-                    subinds = find(params.zinds == iz & params.xinds == im);
-                    h(subinds) = params.Ns_fracs(subinds) .* (cadd(ind) - csub(ind)...
-                        + badd(ind) - bsub(ind));
-                    ind = ind + 1;
-                end
-            end
-        else
-            h = cadd(:) - csub(:) + badd(:) - bsub(:);
-        end
-
-         
-    end
-
+    %Handle a single layer;   
     if params.sol.single_layer
         h = h;
     end
 
+    %Source debug plot a
     if h(1) == 10000
         figure();
         subplot(1,2,1);
@@ -250,6 +197,22 @@ function dydt = PBM_ode(t,y, params)
         plot(cadd); hold on;
         plot(csub); plot(badd); plot(bsub);
         legend('cadd', 'csub', 'badd', 'bsub');
+
+        figure();
+        subplot(2,1,2);
+        plot(h, 'k-', 'LineWidth', 2);
+        grid on; %axis square;
+        ylabel('Numeric Density (1/m3)');
+        title('Source (space/mass/temp)');
+        set(gca,'FontSize', 14)
+
+        subplot(2,1,1);
+        plot(h_m, 'b-', 'LineWidth', 2);
+        grid on; %axis square;
+        ylabel('Numeric Density (1/m3)');
+        title('Source (space/mass)')
+        set(gca,'FontSize', 14)
+
         x = 1;
     end
 
@@ -436,7 +399,7 @@ function dydt = PBM_ode(t,y, params)
                     end
                 case 'Upwind'
                     if any(cellind == bottom_inds)
-                        dFdt(i) = dFdt_in; %((uz * FL) - (uz * FR))/params.dz;
+                        dFdt(i) = h(i) + dFdt_in; %((uz * FL) - (uz * FR))/params.dz;
                     else
                         dFdt(i) = h(i) + ((uz * FL) - (uz * FR))/params.dz;
                     end
@@ -508,6 +471,10 @@ function dydt = PBM_ode(t,y, params)
     %Define output vectro
     dydt = dFdt;
 
+    %Determine if there are issues with the derivatives
+    if any(~isreal(dydt))
+        warning('Imaginary derivatives.');
+    end
 
 
 end

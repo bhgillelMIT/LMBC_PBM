@@ -1,5 +1,12 @@
 function PBM_tests()
 
+%% Setup
+
+    %clean up
+    close all
+
+    set(0, 'DefaultFigureWindowStyle', 'docked');
+
 
 %% Create water structure
 
@@ -16,12 +23,13 @@ function PBM_tests()
 %% Test 4 - Uniform Binary Breakage
 
     %Settings
-    loadresults = true;
-    filepath = 'Data/Solutions/PBM_output_28-Feb-2026_15-38-06.mat';
-
+    loadresults = false;
+    loadresults_analytical = true;
+    filepath = 'Data/Solutions/PBM_output_09-Apr-2026_16-34-58.mat'; %'Data/Solutions/PBM_output_28-Feb-2026_15-38-06.mat';
+    addpath('src/');
 
     %Set inputs
-    B0 = 35000;
+    B0 = 1;
 
     inputs = PBM_inputs();
     inputs.src.coalesce_active = false;
@@ -35,8 +43,10 @@ function PBM_tests()
     inputs.disc.dt = 1;
     inputs.mmesh.type = 'Geometric';
     inputs.mmesh.input = 'Volume'; 
-    inputs.sim.t_end = 50;
+    inputs.sim.t_end = 500;
     inputs.sol.single_layer = true;
+    inputs.sol.dt_initial = 0.1;
+    inputs.sol.dt_max = 10;
 
     %Run simulation
     if loadresults
@@ -58,48 +68,102 @@ function PBM_tests()
     dVbs = diff(Vbs); dVbs = repmat(dVbs, length(ts), 1);
     yi = ys;
     ys = yi./dVbs;
+    ys = ys;
+    
 
     %Post process numerical result
 
 
     %Calculate numeric density versus time
+    Nvs = 100;
     Nt = zeros(length(ts), 1);
     for i = 1:length(ts)
-        Nt(i) = trapz(yi(i,:));
+        Nt(i) = sum(ys(i,2:end))./(Nvs-1); %sum(yi(i,2:end));
     end
+    Nti = Nt;
     Nt = Nt./Nt(1);
 
-    [~,ind6] = min(abs(Nt - 6));
-    [~,ind300] = min(abs(Nt - 300));
+    [~,ind6] = min(abs(Nt - 6)); Nt_6 = Nt(ind6);
+    [~,ind300] = min(abs(Nt - 300)); Nt_300 = Nt(ind300);
 
     %Calculate analytic solution
-    vs = logspace(log10(min(Vbs)), log10(0.9999999), 100);
-    ns = zeros(3,length(vs));
-    ts_comp_inds = 2:100:length(ts)
-    ts_comp = ts(ts_comp_inds); %[0; ts(ind6); ts(ind300)];
-    for it = 1:length(ts_comp)
-        t = ts_comp(it)*B0;
-        y_func = @(y) exp(-t.*y.^3)./(y.^2);
-        n_func = @(v) exp(-t.^2) .* dirac(v-1) + (6.*t.*v) .* integral(y_func, v, 1); %exp(-t.^2) .* dirac(v-1) + 6.*t.*v .* integral(y_func, v, 1);
-        %Iterate through each v
-        for iv = 1:length(vs)
-            v = vs(iv);
-            ns(it, iv) = (1/7.7545)*n_func(v);
-        end
+    if loadresults_analytical
+        analytical = load('Data/Studies/Analytical/Validation_Breakage_directsol_09-Apr-2026 16-40-48.mat');
+        analytical = analytical.directsol;
+        ts_comp = analytical.t; ns = analytical.y; ni = ns;
+        vs = logspace(log10(1E-5), log10(1), length(ns(end,:)));
 
+        
+    else
+        [t, y] = solve_breakage_ref(inputs.sim.t_end, B0)
+        ts_comp = ts; 
     end
+
+
+    
+    % %Calculate analytic solution
+    % Nvs = 100;
+    % vsb = logspace(log10(min(Vbs)), log10(1), Nvs+1);
+    % vs =( vsb(1:end-1) + vsb(2:end))./2;
+    % ns = zeros(3,length(vs));
+    % ts_comp_inds = 2:10:length(ts);
+    % ts_comp = ts(ts_comp_inds); %[0; ts(ind6); ts(ind300)];
+    % %ts_comp = [ts(ind6); ts(ind300)]; %[ts_comp];
+    % for it = 1:length(ts_comp)
+    %     t = ts_comp(it);
+    %     y_func = @(y) exp(-t.*(y).^3)./((y).^2);
+    %     n_func = @(v) exp(-t) .* dirac(v-1) + (12.*t.*v.^2) .* integral(y_func, v, 1); %exp(-t.^2) .* dirac(v-1) + 6.*t.*v .* integral(y_func, v, 1);
+    %     %Iterate through each v
+    %     for iv = 1:length(vs)
+    %         v = vs(iv);
+    %         ns(it, iv) = n_func(v);
+    %     end
+    % 
+    % end
+    % 
+    % %Calculate numeric density 
+    % dVbs_analytical = diff(vsb);
+    % dVbs_analytical = repmat(dVbs_analytical, length(ts_comp_inds), 1);
+    % ni = ns;
+    % ns = ns./dVbs_analytical; 
+
+    % %Calculate analytical solution 
+    % alpha = 2;
+    % m = 2/(alpha + 1);
+    % z = x^(alpha+1);
+    % Lm = @(x) sum( factorial(m)./(factorial(m-i) .* factorial(i))   )
+    % ts_comp_inds = 2:100:length(ts);
+    % ts_comp = ts(ts_comp_inds); %[0; ts(ind6); ts(ind300)];
+    % for it = 1:length(ts_comp)
+    % 
+    % 
+    % exp(-t*x^(2/m)) .* (c0 + (2*t)/m .* integral(x, 1))
+    % 
+    % 
 
 
     %Calculate number
+    Nvs_analytical = numel(ni)./length(ts_comp);
     Nt_analytical = zeros(1, length(ts_comp));
     for i = 1:length(ts_comp)
-        Nt_analytical(i) = trapz(ns(i,:));
+        Nt_analytical(i) = sum(ni(i,:))./Nvs_analytical;
     end
     Nt_analytical = Nt_analytical./Nt_analytical(1);
 
+    [~,ind6_ref] = min(abs(Nt_analytical - 6)); Nt_6_ref = Nt_analytical(ind6_ref);
+    [~,ind300_ref] = min(abs(Nt_analytical - 300)); Nt_300_ref = Nt_analytical(ind300_ref);
+
+
     figure();
-    plot(ts_comp, Nt_analytical, 'k-'); hold on;
-    plot(ts_comp, Nt(ts_comp_inds), 'ko');
+    ts_comp_inds = find(ts <= max(ts_comp));
+    loglog(ts_comp, Nt_analytical, 'k-'); hold on;
+    loglog(ts(ts_comp_inds), Nt(ts_comp_inds), 'ko');
+    xlim([1,10^5])
+
+    %Compare slopes
+    m_numerical = (Nt(end) - 1)./(ts_comp(end) - ts_comp(1));
+    m_analytical  = (Nt_analytical(end) - 1)./(ts_comp(end) - ts_comp(1));
+    m_ratio = m_analytical/m_numerical;
     
     %ns(1,:) = n_func(vs, 0);
     %ns(2,:) = n_func(vs, ts(ind6));
@@ -111,13 +175,18 @@ function PBM_tests()
 
 
 
+    [~, t10_ind] = min(abs(ts - 10));
+    [~, t10_ind_analytical] = min(abs(ts_comp - 10));
+
     
     loglog(params.Vms, ys(1,:), 'k.'); hold on;
-    loglog(params.Vms, ys(ind6,:), 'ko');
-    loglog(params.Vms, ys(ind300,:), 'k+');
+    loglog(params.Vms, ys(t10_ind,:), 'ko');
+    %loglog(params.Vms, ys(ind300,:), 'k+');
 
-    loglog(vs, ns(2,:));
-    loglog(vs, ns(3,:));
+    loglog(vs, ns(1,:), 'm.');
+    loglog(vs, ns(t10_ind_analytical,:));
+    %loglog(vs, ns(ind300_ref,:));
+    %loglog(vs, ns(3,:));
     %loglog(params.Vms, n_constant(end,:), 'k-');
     %loglog(params.Vms, n_constant(2,:), 'k--');
     %loglog(params.Vms, n_constant(1,:), 'k:')
@@ -502,5 +571,75 @@ function [n_constant, phi_constant_out] = Hounslow_1988(ts, N0, v0, C, params)
     phi_constant_out = 1;
 
 
+
+end
+
+
+
+function [t, y] = solve_breakage_ref(tmax, B0)
+
+    Nvs = 350;
+
+    vs = logspace(log10(1E-5), log10(1), Nvs);
+    ns = zeros(size(vs));
+    ns(end) = 1; 
+
+    %Define params
+    params.vs = vs;
+    params.Nvs = Nvs;
+    params.B0 = B0;
+
+    %Solve ode
+    tspan = [0 tmax];
+    odeopts = odeset('RelTol', 1e-6, 'AbsTol', 1e-6, 'InitialStep', 0.0001,'MaxStep', 10);
+    breakage_ode_in = @(t,y) breakage_ode(t,y,params);
+    [t, y] = ode15s(breakage_ode_in, tspan, ns, odeopts);
+
+    %Save output
+    directsol.t = t;
+    directsol.y = y;
+    directsol.Nvs = Nvs;
+    directsol.vs = vs;
+    timestr = strrep(datestr(now), ':', '-');
+    outname = sprintf('Validation_Breakage_directsol_%s.mat', timestr);
+    outpath = ['Data/Studies/Analytical/', outname];
+    save(outpath, 'directsol');
+
+
+end
+
+
+function dndt = breakage_ode(t,n, params)
+
+    debug = true;
+
+    dndt = zeros(size(n));
+    
+    v_max = 1;
+
+
+    for iv = 1:length(n)
+
+        v = params.vs(iv);
+
+        %bv = v^2;
+
+        %beta = 1;
+
+        n_func = @(v_p) interp1(params.vs, n, v_p, 'nearest', 'extrap');
+        int_func = @(v_p) 2.*n_func(v_p).*v_p.*params.B0; 
+        dndt(iv) = integral(int_func, v, v_max) - n(iv)*params.B0*v^2;
+
+
+
+    end
+
+    %Output statement
+    if debug
+        fprintf('- t = %0.4f s\n', t);
+    end
+
+
+    %dydt = dndt;
 
 end

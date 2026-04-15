@@ -1,4 +1,4 @@
-function T_bar = CalcTbar(y_t, y_t_m, iz, im, params)
+function [T_bar, Ts_m ,Ns_m] = CalcTbar(y_t, y_t_m, iz, im, params)
 
 %Run without input
 if nargin < 1
@@ -82,11 +82,17 @@ end
 
         %Calculate weighted mean
         if length(Ts) == length(yfrac)
-            T_bar = sum(Ts(:) .* yfrac(:));
+            if N > 0
+                T_bar = sum(Ts(:) .* yfrac(:));
+            else
+                T_bar = mean(Ts(:));
+            end
         else
             error('Ts and yfrac length do not match. Programming error.');
         end
         
+        %Define output distributions
+        Ts_m = Ts; Ns_m = subys(active_inds);
 
 
         
@@ -112,8 +118,11 @@ end
             end
     
             T_bar = mean(mean(T_mat));
+            Ts_m = 1;
         catch
             T_bar = params.T_liq;
+            Ts_m = 1;
+            Ns_m = 1;
         end
 
     end

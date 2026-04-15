@@ -21,11 +21,11 @@ function [b_eddy, beta, int_ratio] = BreakageLuoSvendson(iz, im, d, Ns_cell, lam
      if lambda_min(iz) < d %otherwise the bubble cannot be broken by eddies
 
         %List lambdas and calculate zetas
-        lambdas = logspace(log10(lambda_min(iz)), log10(d), N_lambdas);
+        lambdas = linspace(lambda_min(iz), d, N_lambdas); %logspace(log10(lambda_min(iz)), log10(d), N_lambdas);
         zetas = lambdas./d;
 
         %Constants
-        beta_coeff = 2.41;
+        beta_coeff = 2;
 
         %Pull storage vectors
         b_fvd = params.break.bfd_zero;
@@ -36,7 +36,7 @@ function [b_eddy, beta, int_ratio] = BreakageLuoSvendson(iz, im, d, Ns_cell, lam
         for iv = 1:length(params.fvs_norm)
 
             %Pull value
-            fv = params.fvs_norm(iv)+1E-12;
+            fv = params.fvs_norm(iv)+1E-8;
             
 
             %Calculate relevant values

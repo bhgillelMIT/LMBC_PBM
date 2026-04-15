@@ -10,7 +10,7 @@ function outputs = TemperatureCharacteristics(params)
     %Settings
     debug = params.chars.debug;
     print = params.chars.print;
-    genplot = false;
+    genplot = true;
     genplot_final = true;
     saveplot = true;
     lw = 1;
@@ -25,8 +25,10 @@ function outputs = TemperatureCharacteristics(params)
     plots.ms = ms; plots.lw = lw; plots.fs = fs;
 
     %Sepcify string corresponding to case
-    outputs.filename = sprintf('Chars_%s_Nm=%d_Ti=%d_Tstd=%d_Tl=%d.mat', params.liquid.name, params.Nms, round(params.T_mu_i), params.T_std_i, round(params.T_liq));
-
+    outputs.filename = sprintf('Chars_%s_H=%d_Nz=%d_Nm=%d_rs=%g-%g_Ti=%d_Tstd=%d_Tl=%d',...
+        params.liquid.name, params.reactor.H, params.Nz, params.Nms, params.rbs(1), params.rbs(end), round(params.T_mu_i), params.T_std_i, round(params.T_liq));
+    outputs.filename = strrep(outputs.filename, '.', '*'); 
+    outputs.filename = [outputs.filename, '.mat'];
     %Initial print
     if print
         fprintf('Characeristics - Beginning:\n')
