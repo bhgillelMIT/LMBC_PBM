@@ -252,17 +252,114 @@ function [y0, params, N_volumes_total, Fb_i_out] = InitializeVolumes(params, mes
 
         if params.heat.active & params.react.active
             
- 
+            if params.react.singleval %Approximate conversion as a single value
+                x = 1;
+
+            else
+
+
+                %Allocate
+                cellinds_layer = []; %[1:mesh.N_cells], disc.Nms, 1); params.cellinds = params.cellinds(:); %Specifies which spatial cell the volume maps to
+                xinds_layer = []; %repmat([1:disc.Nms]', mesh.N_cells, 1);
+                zinds_layer = []; %repmat([1:disc.Nz], disc.Nms, 1); params.zinds = params.zinds(:);
+                Tinds_layer = [];
+                Xinds_layer = [];
+    
+                %Iterate through each representative size
                 for im = 1:disc.Nms
 
-                    
+                    %Determine number of temperature and conversion bins
+                    NXs = params.chars.N_Xis;
+
+                    NTs = 0;
+                    NTss = zeros(1, NXs);
+                    Xinds_size = [];
+                    Tinds_size = [];
+                    for ix = 1:NXs
+
+                        %Determine how many temperatures are relevant
+                        merged = chars.merged{im}{ix};
+                        fracs_in = params.T_z.chars.fracs_in{im};
+                        bins_in = merged.bins_in(:,iz);
+                        NTs = NTs + max(bins_in); % - 1 CHECK THIS
+                        NTss(ix) = max(bins_in);
+
+                        %Xinds_size = 1
 
 
-                    NTs = length(params.T_z.chars.Ts_zs{im});
-                    NXs = length(params.T_z.chars.Ts_zs{im}{1});
-                    Npts = NTs*NXs;
-                    N_volumes_layer(iz) = N_volumes_layer + Npts;
+                        %Xinds_size = [Xinds_size, ix.*ones(1,NTss(ix))];
+                        %Tinds_size = [Tinds_size, 1:NTss(ix)];
+                        
+
+                    end
+
+                    %
+                    Tinds_size = zeros(max(NTss), NXs);
+                    Xinds_size = zeros(max(NTss), NXs);
+                    for ix = 1:NXs
+                        NTx = NTss(ix);
+                        Tinds_size(1:NTx, ix) = 1:NTx;
+                        Xinds_size(1:NTx, ix) = ix;
+
+                    end
+                    Tinds_size = Tinds_size'; 
+                    Tinds_size = Tinds_size(Tinds_size > 0);
+                    Tinds_size = Tinds_size(:);
+                    Xinds_size = Xinds_size';
+                    Xinds_size = Xinds_size(Xinds_size > 0);
+                    Xinds_size = Xinds_size(:);
+
+
+
+
+                    %Define number of volumes
+                    Npts = sum(NTss);
+
+                    %Allocate 
+
+
+                        
+                    %Npts = NTs; %Number of points within this space/mass cell
+                    N_volumes_layer(iz) = N_volumes_layer(iz) + Npts;
+    
+
+                    if length(fracs_in) ~= length(bins_in)
+                        x = 1;
+                    end
+    
+                    %Define indices
+                    cellinds_size = iz .* ones(Npts, 1); %[1:mesh.N_cells], disc.Nms, 1); params.cellinds = params.cellinds(:); %Specifies which spatial cell the volume maps to
+                    xinds_size = im .* ones(Npts, 1); %repmat([1:disc.Nms]', mesh.N_cells, 1);
+                    zinds_size = iz .* ones(Npts, 1); %repmat([1:disc.Nz], disc.Nms, 1); params.zinds = params.zinds(:);
+                    %Tinds_size = 1:26; Tinds_size = Tinds_size';
+                    %Tinds_size = repmat(Tinds_size, 1, 4); 
+                    %Tinds_size = Tinds_size'; %Tinds_size = Tinds_size(:);
+                    %Xinds_size = 1:NXs; Xinds_size = repmat(Xinds_size', NTs, 1);
+
+                    cellinds_layer = [cellinds_layer; cellinds_size];
+                    xinds_layer = [xinds_layer; xinds_size];
+                    zinds_layer = [zinds_layer; zinds_size];
+                    Tinds_layer = [Tinds_layer; Tinds_size];
+                    Xinds_layer = [Xinds_layer; Xinds_size];
+                    %end
+
+
                 end
+
+
+
+                % for im = 1:disc.Nms
+                % 
+                % 
+                % 
+                % 
+                %     NTs = length(params.T_z.chars.Ts_zs{im});
+                %     NXs = length(params.T_z.chars.Ts_zs{im}{1});
+                %     Npts = NTs*NXs;
+                %     N_volumes_layer(iz) = N_volumes_layer + Npts;
+                % end
+
+            end
          
         elseif params.heat.active
 
@@ -277,7 +374,7 @@ function [y0, params, N_volumes_total, Fb_i_out] = InitializeVolumes(params, mes
             for im = 1:disc.Nms
 
                 %Determine how many temperatures are relevant
-                merged = chars.merged{im};
+                merged = chars.merged{im}{1};
                 fracs_in = params.T_z.chars.fracs_in{im};
                 bins_in = merged.bins_in(:,iz);
                 NTs = max(bins_in); % - 1 CHECK THIS
@@ -314,7 +411,7 @@ function [y0, params, N_volumes_total, Fb_i_out] = InitializeVolumes(params, mes
 
 
         elseif params.react.active 
-                x = 1
+                x = 1;
 
         else %No heat or reaction - default case 
 
@@ -479,6 +576,8 @@ function [y0, params, N_volumes_total, Fb_i_out] = InitializeVolumes(params, mes
 %% Identify Adjacent Indices
 
     params = IdentifyAdjacentInds(params, N_volumes_total);
+
+
 
 %% Update boundary conditions
 

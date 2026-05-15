@@ -124,7 +124,7 @@ function [Nb_i, Fb_i] = PBM_BCs(reactor, mesh, inlet, disc, zs, rms, Vms, T_orif
             if Vms(nearestind) > 1
                 Fb_i(nearestind) = 1 .* (disc.Vbs(nearestind+1) - disc.Vbs(nearestind)); %1/(disc.Vbs(nearestind) - disc.Vbs(nearestind-1));
             else
-                Fb_i(nearestind) = 1 .* (disc.Vbs(nearestind+1) - disc.Vbs(nearestind)); %1/(disc.Vbs(nearestind+1) - disc.Vbs(nearestind));
+                Fb_i(nearestind) = 1 .* ((disc.Vbs(nearestind+1) - disc.Vbs(nearestind)))^2; %1/(disc.Vbs(nearestind+1) - disc.Vbs(nearestind));
             end
 
 

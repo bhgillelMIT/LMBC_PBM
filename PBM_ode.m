@@ -1,7 +1,8 @@
 function dydt = PBM_ode(t,y, params)
 
     %Make parameters global
-    global params
+    %global params
+    global output
 
     %Run parent function if called directly
     if nargin == 0
@@ -25,7 +26,7 @@ function dydt = PBM_ode(t,y, params)
     %Normalize numeric densities if 
     if params.sol.single_layer
         m_total = sum(params.mms_rep .* y .* params.Vcells_rep);
-        m_ref = params.m_total(1);
+        m_ref = output.m_total(1);
         y = y .* (m_ref/m_total);
     end
 
@@ -45,6 +46,8 @@ function dydt = PBM_ode(t,y, params)
 
     %Calculate total numeric density for each 
     [params.Ns_z, params.Ns_m, params.Ns_T, params.Ns_fracs] = CalcNumericDensities(F, params);
+    output.Ns_z = params.Ns_z; output.Ns_m = params.Ns_m;
+    output.Ns_T = params.Ns_T; output.Ns_fracs = params.Ns_fracs;
 
     %Identify indices for inlet
     inlet_inds = find(params.zinds == 1); 
@@ -95,7 +98,7 @@ function dydt = PBM_ode(t,y, params)
         if zind == 1 | zind == params.Nz %Bottom or top layer
             rz_val = 0;
         else
-            rz_val = (F(j) - F(ind_below))/(F(ind_above) - F(j) + 1E-12);
+            rz_val = (params.Ns_m(j) - params.Ns_m(ind_below))/(params.Ns_m(ind_above) - params.Ns_m(j) + 1E-12);
         end
 
         %Determine which indices to apply this to
@@ -395,11 +398,11 @@ function dydt = PBM_ode(t,y, params)
                     if any(cellind == bottom_inds)
                         dFdt(i) = dFdt_in; %((uz * FL) - (uz * FR))/params.dz + params.mu_art * d2Fdz2;
                     else
-                        dFdt(i) = h(i) + ((uz * FL) - (uz * FR))/params.dz + params.sol.mu_art * d2Fdz2;
+                        dFdt(i) = h(i) + ((uz * FL) - (uz * FR))/params.dz; % + params.sol.mu_art * d2Fdz2;
                     end
                 case 'Upwind'
                     if any(cellind == bottom_inds)
-                        dFdt(i) = h(i) + dFdt_in; %((uz * FL) - (uz * FR))/params.dz;
+                        dFdt(i) = dFdt_in; %((uz * FL) - (uz * FR))/params.dz;
                     else
                         dFdt(i) = h(i) + ((uz * FL) - (uz * FR))/params.dz;
                     end

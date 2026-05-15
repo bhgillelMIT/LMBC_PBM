@@ -10,6 +10,8 @@ function gparams = GenerateMovingPivots(gparams, params)
     R = 8.3145;
     g = 9.81;
 
+    
+
     %Pull values
     T_mu = gparams.T_mu;
     T_std = gparams.T_std;
@@ -635,6 +637,10 @@ function [Tis, zis, tis, uis] = TrailingPointsInitial(T1, Y1, slowest, n_i, para
             deltaT_i_cumsum = cumsum(deltaT_is);
             Tis = [params.T_min, params.T_min + deltaT_i_cumsum];
             Tis = Tis(2:end-1);
+        case 'equal'
+            zis = linspace(0,params.reactor.H, N_trail_pts+2);
+            zis = zis(2:end-1);
+            Tis = interp1(slowest.z_unique, slowest.T_unique, zis);
 
     end
 

@@ -10,23 +10,29 @@ function outputs = TemperatureCharacteristics(params)
     %Settings
     debug = params.chars.debug;
     print = params.chars.print;
-    genplot = true;
-    genplot_final = true;
-    saveplot = true;
+    genplot = false;
+    genplot_final = false;
+    saveplot = false;
     lw = 1;
     ms = 12;
     fs = 18;
     dir_char = params.chars.fig_dir; % 'Figures/Characteristics/';
     dir_temp = [dir_char, 'T/'];
     dir_conv = [dir_char, 'X/']; %'Figures/Characteristics/X/';
+    dir_merged = [dir_char, 'merged/'];
     dir_data = params.chars.data_dir;  %'Data/Characteristics/';
 
     %Specify general plot settings
     plots.ms = ms; plots.lw = lw; plots.fs = fs;
 
     %Sepcify string corresponding to case
-    outputs.filename = sprintf('Chars_%s_H=%d_Nz=%d_Nm=%d_rs=%g-%g_Ti=%d_Tstd=%d_Tl=%d',...
-        params.liquid.name, params.reactor.H, params.Nz, params.Nms, params.rbs(1), params.rbs(end), round(params.T_mu_i), params.T_std_i, round(params.T_liq));
+    RStr = 'F';
+    if params.react.active
+        RStr = 'T';
+    end
+    outputs.filename = sprintf('Chars_%s_H=%g_Nz=%d_Nm=%d_rs=%g-%g_Ti=%d_Tstd=%d_Tl=%d_R=%s',...
+        params.liquid.name, params.reactor.H, params.Nz, params.Nms, params.rbs(1),...
+        params.rbs(end), round(params.T_mu_i), params.T_std_i, round(params.T_liq), RStr);
     outputs.filename = strrep(outputs.filename, '.', '*'); 
     outputs.filename = [outputs.filename, '.mat'];
     %Initial print
@@ -48,9 +54,10 @@ function outputs = TemperatureCharacteristics(params)
         dir_time = dir_char + dirname + '/';
         dir_temp = dir_char + dirname + '/T/';
         dir_conv = dir_char + dirname + '/X/';
+        dir_merged = dir_char + dirname + '/merged/';
 
         %Make T and X directories
-        mkdir(dir_temp); mkdir(dir_conv);
+        mkdir(dir_temp); mkdir(dir_conv); mkdir(dir_merged);
 
 
     end
@@ -73,39 +80,84 @@ function outputs = TemperatureCharacteristics(params)
 
     zs_interp = 0:0.001:params.reactor.H;
 
-    %Initialize ode parameter structure
-    odeparams.H_func = @(n_CH4, n_H2, n_C, T) n_CH4 * integral(methane.Cp, T0, T) + ...
-        n_H2 * integral(hydrogen.Cp, T0, T) + n_C * integral(carbon.Cp, T0, T);
-    odeparams.p_z = p_z;
-    odeparams.h_reactor = params.reactor.H;
-    odeparams.T_Lz = params.T_Lz;
-    odeparams.rho_L_T = params.rho_L_T;
-    odeparams.g = params.g;
-    odeparams.R = params.R;
-    odeparams.methane = params.methane;
-    odeparams.hydrogen = params.hydrogen;
-    odeparams.carbon = params.carbon;
-    odeparams.liquid = params.liquid;
-    odeparams.argon = params.argon;
-    odeparams.k0 = 6.6E13;
-    odeparams.Ea = -370000;
-    odeparams.h_conv = 5;
-    odeparams.Xis = linspace(0,1, params.chars.N_Xis+1);%0:0.125:0.875;
-    odeparams.Xis = odeparams.Xis(1:end-1);
-    odeparams.h_conv_const = params.h_conv_const;
-    odeparams.chars = params.chars;
+    %Settings for characteristic generation
+    X_thresh = 0.1;
 
-    %Determine 
-    m = params.mms(end); odeparams.m = m;
+    %Initialize ode parameter structure for largest case 
+    odeparams1.H_func = @(n_CH4, n_H2, n_C, T) n_CH4 * integral(methane.Cp, T0, T) + ...
+        n_H2 * integral(hydrogen.Cp, T0, T) + n_C * integral(carbon.Cp, T0, T);
+    odeparams1.p_z = p_z;
+    odeparams1.h_reactor = params.reactor.H;
+    odeparams1.T_Lz = params.T_Lz;
+    odeparams1.rho_L_T = params.rho_L_T;
+    odeparams1.g = params.g;
+    odeparams1.R = params.R;
+    odeparams1.methane = params.methane;
+    odeparams1.hydrogen = params.hydrogen;
+    odeparams1.carbon = params.carbon;
+    odeparams1.liquid = params.liquid;
+    odeparams1.argon = params.argon;
+    odeparams1.k0 = params.react.k0; %6.6E13;
+    odeparams1.Ea = params.react.Ea; %-370000;
+    odeparams1.h_conv = 5;
+    odeparams1.Xis = linspace(0,1, params.chars.N_Xis+1);%0:0.125:0.875;
+    odeparams1.Xis = odeparams1.Xis(1:end-1);
+    odeparams1.h_conv_const = params.h_conv_const;
+    odeparams1.chars = params.chars; 
+
+    %Solve the slowest case to resolve trailing points
+    m = params.mms(end); odeparams1.m = m;
     n_i = m/params.M_gas_i;n_Ar_i = n_i * params.X_Ar; n_CH4_i = n_i * (1-params.X_Ar);
-    odeparams.im = params.Nms;
-    odeparams.Xi = 0;
-    odeparams.n_i = n_i;
-    odeparams.n_Ar_i = n_Ar_i;
-    odeparams.n_CH4_i = n_CH4_i;
+    odeparams1.im = params.Nms;
+    odeparams1.Xi = 0;
+    odeparams1.n_i = n_i;
+    odeparams1.n_Ar_i = n_Ar_i;
+    odeparams1.n_CH4_i = n_CH4_i;
     T_initials = params.T_initials{end}; Tps = T_initials.Tps;
-    [T,Y] = TemperatureCharacteristic(0, params.t_f, params.T_min, [], params, odeparams, true);
-    Tf_min_largest = Y(end,3);
+    T_largest_i = min([min(Tps), params.T_min]);
+
+    %Iterate through initial Xis
+    Xis = linspace(params.reactor.X_i, 1, params.chars.N_Xis+1);
+    Xis = Xis(1:end-1);
+    for ix = 1:1; %params.chars.N_Xis
+    
+        odeparams1.Xi = Xis(ix); 
+            [ts_largest,Y_largest] = TemperatureCharacteristic(0, params.t_f, T_largest_i, [], params, odeparams1, true);
+        zs_largest = Y_largest(:,2); [zs_largest, unique_inds] = unique(zs_largest);
+        us_largest = Y_largest(unique_inds, 1);
+        Ts_largest = Y_largest(unique_inds,3);
+        Xs_largest = Y_largest(unique_inds,4);
+        ts_largest = ts_largest(unique_inds);
+        Y_largest = Y_largest(unique_inds,:);
+        Tf_min_largest = Y_largest(end,3);
+        Xf_min_largest = Y_largest(end,4);
+        X_thresh = (1 - Xf_min_largest)./params.chars.N_Xis;
+    
+        %Create structure containing largest values
+        largest.ts = ts_largest;
+        largest.Ts = Ts_largest;
+        largest.Xs = Xs_largest;
+        largest.zs = zs_largest;
+
+        %Add to cell array
+        largests{ix} = largest;
+
+        %Plot results
+        if false
+            if ix == 1
+                figure();
+            end
+            subplot(1,2,1);
+            plot(largest.Ts, largest.zs, 'r-'); hold on;
+
+            subplot(1,2,2);
+            plot(largest.Xs, largest.zs, 'b-'); hold on;
+        end
+
+    end
+
+    %Specify default largest
+    largest = largests{1};
 
     %Iterate through each mass
     for im = 1:params.Nms
@@ -120,8 +172,29 @@ function outputs = TemperatureCharacteristics(params)
         %Pull initial mass fraction
         init_fracs = params.T_initials{im}.Fracs;
 
+        %Initialize odeparams - allows parfor
+        odeparams.H_func = @(n_CH4, n_H2, n_C, T) n_CH4 * integral(methane.Cp, T0, T) + ...
+        n_H2 * integral(hydrogen.Cp, T0, T) + n_C * integral(carbon.Cp, T0, T);
+        odeparams.p_z = p_z;
+        odeparams.h_reactor = params.reactor.H;
+        odeparams.T_Lz = params.T_Lz;
+        odeparams.rho_L_T = params.rho_L_T;
+        odeparams.g = params.g;
+        odeparams.R = params.R;
+        odeparams.methane = params.methane;
+        odeparams.hydrogen = params.hydrogen;
+        odeparams.carbon = params.carbon;
+        odeparams.liquid = params.liquid;
+        odeparams.argon = params.argon;
+        odeparams.k0 = params.react.k0; %6.6E13;
+        odeparams.Ea = params.react.Ea; %-370000;
+        odeparams.h_conv = 5;
+        odeparams.Xis = linspace(0,1, params.chars.N_Xis+1);%0:0.125:0.875;
+        odeparams.Xis = odeparams.Xis(1:end-1);
+        odeparams.h_conv_const = params.h_conv_const;
+        odeparams.chars = params.chars;
 
-        %Update ode parameters
+        %Update ode parameters with case specific values
         odeparams.im = im;
         odeparams.m = m;
         odeparams.Xi = 0; %
@@ -138,6 +211,20 @@ function outputs = TemperatureCharacteristics(params)
         itrail = find(~T_initials.engaged); 
         itrail = fliplr(itrail);
 
+        %Determine the initial Xis and their activation time
+        Fo_crit = 1;
+        Lc = params.rms(im)./3;
+        ks = params.methane.therm_cond(Tps);
+        rhos = params.methane.density(params.p_orifice, Tps);
+        Cps = params.methane.Cp(Tps);
+        alphas = ks./(rhos .* Cps);
+        t_heat = (Fo_crit * Lc.^2)./alphas;
+        k_react = odeparams.k0 .* exp(odeparams.Ea./(8.3145 .* params.reactor.T));
+        t_react = 1./k_react;
+        t_totals = t_react + t_heat;
+        ubs = CalcVelocities(params.rms(im)*2, Tps, params.liquid, params.p_orifice, params.fsolve_opts);
+        t_ress = params.reactor.H./ubs;
+
         %Allocate storage vectors
         Zs_T = cell(1, length(Tps));
         Ts_T = cell(1, length(Tps));
@@ -153,9 +240,24 @@ function outputs = TemperatureCharacteristics(params)
 
         %Calculate final temperature difference between this bubble size
         %and the largest bubble size
-        [T,Y] = TemperatureCharacteristic(0, params.t_f, Tps(1), [], params, odeparams, debug);
+        [T,Y] = TemperatureCharacteristic(0, params.t_f, min(Tps), [], params, odeparams, debug);
         Tf_min_i = Y(end,3);
+        
         DTf_i = Tf_min_i - Tf_min_largest;
+
+        %Debug figure
+        % tempfig = figure();
+        % subplot(2,2,1);
+        % plot(largest.Ts, largest.zs); hold on;
+        % subplot(2,2,2);
+        % plot(largest.Ts, largest.zs); hold on;
+        % subplot(2,2,3);
+        % plot(largest.Ts, largest.zs); hold on;
+        % subplot(2,2,4);
+        % plot(largest.Ts, largest.zs); hold on;
+        % 
+        % convfig = figure();
+
         
 
         %Iterate through engaged pivots
@@ -164,26 +266,101 @@ function outputs = TemperatureCharacteristics(params)
             %Allocate storage array
             sol = struct();
 
+            %Determine the conversions 
+            t_needed = t_totals(it);
+            t_res = t_ress(it);
+            if t_res > t_needed
+            
+            else
+
+            end
+
             %Iterate through conversions
-            for ix = 1:length(odeparams.Xis)
+            for ix = 1:params.chars.N_Xis
 
                 %Set Xi
-                odeparams.Xi = odeparams.Xis(ix);
+                if ix == 2 %Use the inlet conversion
+                    DX_complete = 1 - Xs(end);
+                    if im == params.Nms
+                        N_core = params.chars.N_Xis;
+                    else
+                        N_core = ceil(DX_complete/X_thresh);
+                        N_core = min(N_core, params.chars.N_Xis-1);
+                        N_core = min(2, N_core);
+                    end
 
-                %Solve ODE system
-                [T,Y] = TemperatureCharacteristic(0, params.t_f, Tps(it), [], params, odeparams, debug);
+                    %N_core = ceil(DX_complete/X_thresh);
+                    %N_core = min(N_core, params.chars.N_Xis-1);
+                    N_trail = params.chars.N_Xis - N_core;
+                    odeparams.Xis = linspace(params.reactor.X_i, 1, N_core+1);
+                    odeparams.Xis = odeparams.Xis(1:end-1);
+                    zs_trail = linspace(0, params.reactor.H, N_trail+2);
+                    zs_trail = zs_trail(2:end-1);
+                    x = 1;
+
+                end
+
+                %Core point, start from orifice
+                if ix == 1 || ix <= length(odeparams.Xis)
+                        
+                    if ix == 1
+                        odeparams.Xi = params.reactor.X_i;
+                    else
+                        odeparams.Xi = odeparams.Xis(ix);
+                    end
+
+                    %odeparams.Xi = odeparams.Xis(ix);
+                    %odeparams.Xi = odeparams.
+
+                    y0 = [0, 0, Tps(it), odeparams.Xi];
     
+                    %Solve ODE system
+                    [T,Y] = TemperatureCharacteristic(0, params.t_f, Tps(it), y0, params, odeparams, debug);
+        
+                    %Interpolate results to the spatial grid
+                    end_ind = min(find(Y(:,2) > params.reactor.H));
+                    if isempty(end_ind)
+                        end_ind = length(Y(:,2));
+                    end
+                    inds = 1:1:end_ind;
+                    
+
+                %Trail point, start from designated z
+                else
+
+                    %Identify starting condition 
+                    zi = zs_trail(ix + N_trail - params.chars.N_Xis);
+                    T_i = interp1(zs_largest, Ts_largest, zi);
+                    Xi = interp1(zs_largest, Xs_largest, zi);
+                    ui = interp1(zs_largest, us_largest, zi);
+                    ti = interp1(zs_largest, ts_largest, zi);
+                    y0 = [ui, zi, T_i, Xi];
+
+                    %Run case
+                    t_active = ti;
+                    odeparams.Xi = Xi;
+                    [T,Y] = TemperatureCharacteristic(t_active, params.t_f, T_i, y0, params, odeparams, debug);
+
+                    %Compile two results
+                    largest_inds = find(zs_largest < zi);
+                    T = [ts_largest(largest_inds); T];
+                    Y = [Y_largest(largest_inds,:); Y];
+
+
+                end
+
                 %Interpolate results to the spatial grid
                 end_ind = min(find(Y(:,2) > params.reactor.H));
                 if isempty(end_ind)
                     end_ind = length(Y(:,2));
                 end
                 inds = 1:1:end_ind;
+
+                %Extract values
                 ts = T(inds);
                 Zs = Y(inds,2);
                 Ts = Y(inds,3);
                 Xs = Y(inds,4);
-
 
                 %Store
                 interp_method = params.chars.interp_method; %'linear';  
@@ -207,7 +384,32 @@ function outputs = TemperatureCharacteristics(params)
                     x = 1;
                 end
 
+
+                % %Debug plots
+                % figure(tempfig)
+                % if ix == 1
+                %     subplot(2,2,1);
+                %     plot(Ts, Zs); hold on;
+                % elseif ix == 2
+                %     subplot(2,2,2);
+                %     plot(Ts, Zs); hold on;
+                % elseif ix == 3
+                %     subplot(2,2,3);
+                %     plot(Ts, Zs); hold on;
+                % else
+                %     subplot(2,2,4);
+                %     plot(Ts, Zs); hold on;
+                % end
+
+                %figure(convfig)
+
+                    
+
+
             end
+
+            %Reorder the conversion characteristics
+            x = 1;
 
             
 
@@ -215,6 +417,7 @@ function outputs = TemperatureCharacteristics(params)
 
         %Iterate through trailing points
         trail = T_initials.trail;
+        Xs_zis_T = cell(length(itrail), 1); 
         for it = itrail
 
             %Determine the time when the point activates
@@ -250,61 +453,120 @@ function outputs = TemperatureCharacteristics(params)
             Ts_interp = interp1(trail.slowest.t_unique, T_unique, T1);
             us_interp = interp1(t_unique, u_unique, T1);
             Xs_interp = interp1(t_unique, X_unique, T1);
-            Y1 = [us_interp, zs_intrp, Ts_interp, Xs_interp];
+            %Y1 = [us_interp, zs_intrp, Ts_interp, Xs_interp];
+
+            T1 = ts_largest;
+            Y1 = Y_largest;
 
             %Iterate through conversions
-            for ix = 1:length(odeparams.Xis)
+            
+            for ix = 1:1 %params.chars.N_Xis
 
-                %Set Xi
-                odeparams.Xi = max([Y1(end,end), odeparams.Xis(ix)]);
-    
-                %Log original odeparams
-                odeparams_orig = odeparams;
-    
-                % T_i = Tps(it);
-                % 
-                % T_activate = T_i + T_initials.trail.dT;
-                % 
-                % %Determine the time when the point activates
-                % try
-                %     [Ts_interp, unique_inds] = unique(Ts_T{it+1}{ix}); %Filter out repetition because of interp function requirements
-                %     ts_interp = ts_T{it+1}{ix};
-                %     ts_interp = [ts_interp(unique_inds(1:end-1)); ts_interp(end)];
-                %     t_active = interp1(Ts_interp, ts_interp, T_activate);
-                % catch
-                %     x = 1;
-                % end
+                %Determine how many core and trail points to have
+                if ix == 2
+                    DX_complete = 1 - Xs(end);
+                    if im == params.Nms
+                        N_core = params.chars.N_Xis;
+                    else
+                        N_core = ceil(DX_complete/X_thresh);
+                        N_core = min(N_core, params.chars.N_Xis-1);
+                    end
+                    N_trail = params.chars.N_Xis - N_core;
+                    odeparams.Xis = linspace(Xi, 1, N_core+1);
+                    odeparams.Xis = odeparams.Xis(1:end-1);
+                    zs_trail = linspace(zi, params.reactor.H, N_trail+2);
+                    zs_trail = zs_trail(2:end-1);
+                    x = 1;
 
-               
+                
+                end
+
+
+                %Core point, start from orifice
+                if ix == 1 || ix <= (length(odeparams.Xis))
+                        
+                    if ix == 1
+                        odeparams.Xi = Xs_interp(end);
+                    else
+                        odeparams.Xi = odeparams.Xis(ix);
+                    end
+
+                    %odeparams.Xi = odeparams.Xis(ix);
+                    %odeparams.Xi = odeparams.
+
+                    %Specify y0
+                    y0 = [ui, zi, Ti, odeparams.Xi];
+
+    
+                    %Solve ODE system
+                    [T,Y] = TemperatureCharacteristic(0, params.t_f, Ti, y0, params, odeparams, debug);
+        
+                    %Interpolate results to the spatial grid
+                    end_ind = min(find(Y(:,2) > params.reactor.H));
+                    if isempty(end_ind)
+                        end_ind = length(Y(:,2));
+                    end
+                    inds = 1:1:end_ind;
+                    
+
+                %Trail point, start from designated z
+                else
+
+                    %Identify starting condition 
+                    zi = zs_trail(ix + N_trail - params.chars.N_Xis);
+                    T_i = interp1(zs_largest, Ts_largest, zi);
+                    Xi = interp1(zs_largest, Xs_largest, zi);
+                    ui = interp1(zs_largest, us_largest, zi);
+                    ti = interp1(zs_largest, ts_largest, zi);
+                    y0 = [ui, zi, T_i, Xi];
+
+                    %Run case
+                    t_active = ti;
+                    odeparams.Xi = Xi;
+                    [T,Y] = TemperatureCharacteristic(t_active, params.t_f, T_i, y0, params, odeparams, debug);
+
+                    % %Compile two results
+                    % largest_inds = find(zs_largest < zi);
+                    % T = [ts_largest(largest_inds); T];
+                    % Y = [Y_largest(largest_inds,:); Y];
+
+
+                end
+
+
+                %Reorder the conversion characteristics
+                strix = 1;
+
+
+
+                %odeparams.Xi = max([Y1(end,4), odeparams.Xis(ix)]);
+                % 
+                % %Log original odeparams
+                % odeparams_orig = odeparams;
+                % 
+                % %Solve second part - at velocity of current bubble size
+                % T_i = Ti;
+                % y0 = [ui, zi, Ti, odeparams.Xi]; %Y1(end,:);
+                % odeparams = odeparams_orig;
+                % 
+                % 
+                % [T2,Y2] = TemperatureCharacteristic(t_active, params.t_f, T_i, y0, params, odeparams, debug);
+                % 
+
+
                 
 
-                % 
-                % 
-                % 
-                % %Solve first part - at velocity of largest bubble
-                % m_largest = params.mms(end);
-                % n_i = m_largest/params.M_gas_i;
-                % n_Ar_i = n_i * params.X_Ar;
-                % n_CH4_i = n_i * (1-params.X_Ar);
-                % 
-                % odeparams.m = m_largest;
-                % %odeparams.Xi = 0; %
-                % odeparams.n_i = n_i;
-                % odeparams.n_Ar_i = n_Ar_i;
-                % odeparams.n_CH4_i = n_CH4_i;
-                % [T1,Y1] = TemperatureCharacteristic(0, t_active, T_i, [], params, odeparams, debug);
-    
-                %Solve second part - at velocity of current bubble size
-                T_i = Ti;
-                y0 = [ui, zi, Ti, odeparams.Xi]; %Y1(end,:);
-                odeparams = odeparams_orig;
-                
-
-                [T2,Y2] = TemperatureCharacteristic(t_active, params.t_f, T_i, y0, params, odeparams, debug);
-                
                 %Compile two results
-                T = [T1(1:end-1); T2];
-                Y = [Y1(1:end-1,:); Y2];
+                %if ix > 1
+                %    Y1(:,end) = odeparams.Xi;
+                %end
+                largest_inds = find(zs_largest < zi);
+                T = [ts_largest(largest_inds); T];
+                Y = [Y1(largest_inds,:); Y];
+
+                % %Compile two results
+                % T = [T1(1:end-1); T2];
+                % Y = [Y1(1:end-1,:); Y2];
     
                 %Log results
                 end_ind = min(find(Y(:,2) > params.reactor.H));
@@ -312,10 +574,14 @@ function outputs = TemperatureCharacteristics(params)
                     end_ind = length(Y(:,2));
                 end
                 inds = 1:1:end_ind;
-                ts = T(inds);
-                Zs = Y(inds,2);
-                Ts = Y(inds,3);
-                Xs = Y(inds,4);
+                Zs = Y(inds,2); [Zs, unique_inds] = unique(Zs);
+                ts = T(inds); ts = ts(unique_inds);
+                Ts = Y(inds,3); Ts = Ts(unique_inds);
+                Xs = Y(inds,4); Xs = Xs(unique_inds);
+
+
+
+
                 interp_method = 'linear';  
                 Zs_T{it}{ix} = Zs;
                 Ts_T{it}{ix} = Ts;
@@ -328,12 +594,58 @@ function outputs = TemperatureCharacteristics(params)
                 Xs_bs_T{it}{ix} = interp1(Zs, Xs, mesh.yy(:,1), 'linear');
                 Xs_cs_T{it}{ix} = interp1(Zs, Xs, mesh.volcell_cents(:,2), 'linear');
                 Xs_zs_T{it}{ix} = interp1(Zs, Xs, zs_interp, interp_method);
+                Xs_zis_T{it}(ix) = zi;
+                %Xs_active_T{it}
                 ts_zs_T{it}{ix} = interp1(Zs, ts, zs_interp, interp_method);
+
+
+                % %Debug plots
+                % figure(tempfig)
+                % if ix == 1
+                %     subplot(2,2,1);
+                %     plot(Ts, Zs); hold on;
+                % elseif ix == 2
+                %     subplot(2,2,2);
+                %     plot(Ts, Zs); hold on;
+                % elseif ix == 3
+                %     subplot(2,2,3);
+                %     plot(Ts, Zs); hold on;
+                % else
+                %     subplot(2,2,4);
+                %     plot(Ts, Zs); hold on;
+                % end
 
             end
             
 
         end
+
+        %Re-sort the conversion characteristics
+        if params.react.active & true %Only do this if the reaction is active
+            Xs_inds = ResortConvChars(Xs_bs_T, params);
+            for it = 1:length(Xs_bs_T)
+                inds = Xs_inds(it,:);
+                Zs_T{it}(1:params.chars.N_Xis) = Zs_T{it}(inds);
+                Ts_T{it}(1:params.chars.N_Xis) = Ts_T{it}(inds);
+                Xs_T{it}(1:params.chars.N_Xis) = Xs_T{it}(inds);
+                ts_T{it}(1:params.chars.N_Xis) = ts_T{it}(inds);
+                Ts_zs_T{it}(1:params.chars.N_Xis) = Ts_zs_T{it}(inds);
+                Ts_bs_T{it}(1:params.chars.N_Xis) = Ts_bs_T{it}(inds);
+                Ts_cs_T{it}(1:params.chars.N_Xis) = Ts_cs_T{it}(inds);
+                Xs_bs_T{it}(1:params.chars.N_Xis) = Xs_bs_T{it}(inds);
+                Xs_cs_T{it}(1:params.chars.N_Xis) = Xs_cs_T{it}(inds);
+                Xs_zs_T{it}(1:params.chars.N_Xis) = Xs_zs_T{it}(inds);
+                ts_zs_T{it}(1:params.chars.N_Xis) = ts_zs_T{it}(inds);
+    
+                %Handle the trailing point activation zs
+                if any(it == itrail) 
+                    Xs_zis_T{it}(1:params.chars.N_Xis) = Xs_zis_T{it}(inds);
+                end
+    
+    
+            end
+        end
+
 
         %Log results
         itrails{im} = itrail;
@@ -343,6 +655,7 @@ function outputs = TemperatureCharacteristics(params)
         Xs_bs{im} = Xs_bs_T;
         Xs_cs{im} = Xs_cs_T;
         Xs_zs{im} = Xs_zs_T;
+        Xs_zis{im} = Xs_zis_T;
         DTf(im) = DTf_i;
         fracs_in{im} = init_fracs;
 
@@ -351,25 +664,25 @@ function outputs = TemperatureCharacteristics(params)
         if genplot & true
             
             %Specify initial concentration index to plot
-            ix = 1;
+            for ix = 1:params.chars.N_Xis
 
-            
+                %Create figure
+                figure('units', 'normalized','outerposition', [0,0,1,1]);
+                subplot(1,2,1);
+                plots.fs = fs;
+                PlotTempCharacteristics(gca, 'T', mesh, zs_interp, itrail, ix, Ts_zs_T, Ts_bs_T, 0, im, plots, largest)
+    
+                %Plot conversion characteristic (assuming initial zero)
+                subplot(1,2,2)
+                PlotConvCharacteristics(gca, 'fixed_Xi', mesh, zs_interp, itrail, ix, Xs_zs_T, Xs_bs_T, 0, im, plots, largest)
+    
+                %Save figure
+                if saveplot
+                    filename = sprintf('Chars_Base_T_X_im=%d_ix=%d.png',im, ix);
+                    filepath = dir_time + filename;
+                    saveas(gcf,filepath)
+                end
 
-            %Create figure
-            figure('units', 'normalized','outerposition', [0,0,1,1]);
-            subplot(1,2,1);
-            plots.fs = fs;
-            PlotTempCharacteristics(gca, 'T', mesh, zs_interp, itrail, ix, Ts_zs_T, Ts_bs_T, 0, im, plots)
-
-            %Plot conversion characteristic (assuming initial zero)
-            subplot(1,2,2)
-            PlotConvCharacteristics(gca, 'fixed_Xi', mesh, zs_interp, itrail, 1, Xs_zs_T, Xs_bs_T, 0, im, plots)
-
-            %Save figure
-            if saveplot
-                filename = sprintf('Chars_Base_T_X_im=%d.png',im);
-                filepath = dir_time + filename;
-                saveas(gcf,filepath)
             end
 
             
@@ -380,9 +693,9 @@ function outputs = TemperatureCharacteristics(params)
             N_Xs = length(odeparams.Xis);
             N_axes = 2 * ceil(N_Xs/2); %Must be an even number
             plots.fs = 8;
-            for ix = 1:length(odeparams.Xis)
+            for ix = 1:params.chars.N_Xis
                 subplot(2,4,ix)
-                PlotConvCharacteristics(gca, 'fixed_Xi', mesh, zs_interp, itrail, ix, Xs_zs_T, Xs_bs_T, 0, im, plots)
+                PlotConvCharacteristics(gca, 'fixed_Xi', mesh, zs_interp, itrail, ix, Xs_zs_T, Xs_bs_T, 0, im, plots, largest)
             end
 
             %
@@ -400,7 +713,7 @@ function outputs = TemperatureCharacteristics(params)
             for it = 1:N_Ts
                 subplot(4,7,it);
                 Ti = Ts_zs_T{it}{1}(1);
-                PlotConvCharacteristics(gca, 'fixed_Ti', mesh, zs_interp, itrail, it, Xs_zs_T, Xs_bs_T,  Ti, im, plots)
+                PlotConvCharacteristics(gca, 'fixed_Ti', mesh, zs_interp, itrail, it, Xs_zs_T, Xs_bs_T,  Ti, im, plots, largest)
             end
 
             %Save figure if requested
@@ -430,18 +743,20 @@ function outputs = TemperatureCharacteristics(params)
     %Export characteristics
     chars.ind_order = {'m', 'Xi', 'Ti'};
     chars.itrails = itrails;
-    
+    chars.largest = largest;
     chars.Ts_zs = Ts_zs;
     chars.Ts_bs = Ts_bs;
     chars.Ts_cs = Ts_cs;
     chars.Xs_bs = Xs_bs;
     chars.Xs_cs = Xs_cs;
     chars.Xs_zs = Xs_zs;
+    chars.Xs_zis = Xs_zis;
     chars.fracs_in = fracs_in; %
 
     %Merge bins
     params.T_z.chars = chars;
-    merged = MergeBins(params);
+    params.dir_merged = dir_merged;
+    merged = MergeBins(params, saveplot);
     chars.merged = merged;
     params.T_z.chars = chars;
 
@@ -451,7 +766,7 @@ function outputs = TemperatureCharacteristics(params)
     outputs.chars = chars;
     
     %Plot full domain - individual
-    if params.chars.debug
+    if params.chars.debug & false
         figtemp = figure('units', 'normalized','outerposition', [0,0,1,1]);
         figconv = figure('units', 'normalized','outerposition', [0,0,1,1]);
         N_ms = length(Ts_zs);
@@ -478,7 +793,7 @@ function outputs = TemperatureCharacteristics(params)
             Ts_zs_T = Ts_zs{im};
             Ts_bs_T = Ts_bs{im};
             itrail = itrails{im};
-            PlotTempCharacteristics(gca, 'T', mesh, zs_interp, itrail, ix, Ts_zs_T, Ts_bs_T, Xi, im, plots)
+            PlotTempCharacteristics(gca, 'T', mesh, zs_interp, itrail, ix, Ts_zs_T, Ts_bs_T, Xi, im, plots, largest)
     
             %Specify figure and subplot
             figure(figconv)
@@ -491,7 +806,7 @@ function outputs = TemperatureCharacteristics(params)
             %Plot conversion characteristics
             Xs_zs_T = Xs_zs{im};
             Xs_bs_T = Xs_bs{im};
-            PlotConvCharacteristics(gca, 'fixed_Xi', mesh, zs_interp, itrail, 1, Xs_zs_T, Xs_bs_T, 0, im, plots)
+            PlotConvCharacteristics(gca, 'fixed_Xi', mesh, zs_interp, itrail, 1, Xs_zs_T, Xs_bs_T, 0, im, plots, largest)
     
     
             %Create new figure
@@ -764,7 +1079,7 @@ end
 % 
 
 
-function PlotTempCharacteristics(ax, mode, mesh, zs_interp, itrail, ix, Ts_zs_T, Ts_bs_T, Ti, im, plots)
+function PlotTempCharacteristics(ax, mode, mesh, zs_interp, itrail, ix, Ts_zs_T, Ts_bs_T, Ti, im, plots, largest)
 
     %Pull plot settings
     lw = plots.lw;
@@ -783,6 +1098,8 @@ function PlotTempCharacteristics(ax, mode, mesh, zs_interp, itrail, ix, Ts_zs_T,
     for it = 1:length(Ts_vert)
         plot([Ts_vert(it), Ts_vert(it)], [0, 0.3],  'k-', 'Color', [0.8, 0.8, 0.8]); hold on;
     end
+
+    
 
     %Iterate through temperatures
     for it = 1:length(Ts_bs_T)
@@ -817,6 +1134,11 @@ function PlotTempCharacteristics(ax, mode, mesh, zs_interp, itrail, ix, Ts_zs_T,
 
     end
 
+
+    %Plot largest case
+    plot(largest.Ts-273.15, largest.zs, 'r-', 'LineWidth', lw, 'Color', [0.4, 0.4, 0.4]);
+
+
     %Aesthetics
     axis square;
     xlabel('Temperature (C)'); ylabel('Z-Position (m)');
@@ -836,7 +1158,7 @@ function PlotTempCharacteristics(ax, mode, mesh, zs_interp, itrail, ix, Ts_zs_T,
 end
 
 
-function PlotConvCharacteristics(ax, mode, mesh, zs_interp, itrail, i, Xs_zs_T, Xs_bs_T, Ti, im, plots)
+function PlotConvCharacteristics(ax, mode, mesh, zs_interp, itrail, i, Xs_zs_T, Xs_bs_T, Ti, im, plots, largest)
     
     %Pull plot settings
     lw = plots.lw;
@@ -890,6 +1212,9 @@ function PlotConvCharacteristics(ax, mode, mesh, zs_interp, itrail, i, Xs_zs_T, 
         end
 
         Xi = Xs_zs_T{it}{i}(1);
+
+        %Plot largest case
+        plot(largest.Xs, largest.zs, 'r-', 'LineWidth', lw, 'Color', [0.4, 0.4, 0.4]);
 
         %Aesthetics
         axis square;
@@ -957,4 +1282,32 @@ function PlotConvCharacteristics(ax, mode, mesh, zs_interp, itrail, i, Xs_zs_T, 
 
 
     end
+end
+
+
+
+function Xs_inds = ResortConvChars(Xs_bs_T, params)
+
+    %Iterate through
+    Xs_inds = zeros(length(Xs_bs_T), params.chars.N_Xis);
+    for it = 1:length(Xs_bs_T)
+
+        %Pull all Xs at boundaries
+        Xs_bs = zeros(params.Nz+1, length(Xs_bs_T{it}));
+        for ix = 1:length(Xs_bs_T{it})
+            Xs_bs(:,ix) = Xs_bs_T{it}{ix};
+        end
+
+        %Identify the correct order for the bins
+        Xs_bs_f = Xs_bs(end,:);
+        [Xs_bs_f_resort, resort_inds] = sort(Xs_bs_f);
+
+        %Log inds
+        Xs_inds(it,:) = resort_inds;
+
+    end
+
+    x = 1;
+
+
 end

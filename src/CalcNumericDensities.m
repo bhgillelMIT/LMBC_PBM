@@ -25,9 +25,11 @@ function [Ns_z, Ns_m, Ns_T, Ns_fracs] = CalcNumericDensities(y, params)
                     ind = find(params.zinds == iz & params.xinds == im & params.Tinds == Tinds(it) & params.Xinds == Xinds(ix));
 
                     %Add the numeric density
-                    Ns_z(iz) = Ns_z(iz) + y(ind);
-                    Ns_m(ia) = Ns_m(ia) + y(ind);
-                    Ns_T(iT) = Ns_T(iT) + y(ind);
+                    if ~isempty(ind)
+                        Ns_z(iz) = Ns_z(iz) + y(ind);
+                        Ns_m(ia) = Ns_m(ia) + y(ind);
+                        Ns_T(iT) = Ns_T(iT) + y(ind);
+                    end
 
                     %inds(end+1) = ind;
 

@@ -21,15 +21,16 @@ function PBM_tests()
 
 
 %% Test 4 - Uniform Binary Breakage
-
+if false
     %Settings
-    loadresults = false;
+    loadresults = true;
     loadresults_analytical = true;
-    filepath = 'Data/Solutions/PBM_output_09-Apr-2026_16-34-58.mat'; %'Data/Solutions/PBM_output_28-Feb-2026_15-38-06.mat';
+    filepath = 'Data/Solutions/PBM_T=0_X=0_05-May-2026_14-43-26.mat'; %'Data/Solutions/PBM_output_28-Feb-2026_15-38-06.mat';
     addpath('src/');
 
     %Set inputs
     B0 = 1;
+    fs = 18
 
     inputs = PBM_inputs();
     inputs.src.coalesce_active = false;
@@ -43,10 +44,11 @@ function PBM_tests()
     inputs.disc.dt = 1;
     inputs.mmesh.type = 'Geometric';
     inputs.mmesh.input = 'Volume'; 
-    inputs.sim.t_end = 500;
+    inputs.sim.t_end = 1000;
     inputs.sol.single_layer = true;
     inputs.sol.dt_initial = 0.1;
     inputs.sol.dt_max = 10;
+    inputs.sol.react.active = false;
 
     %Run simulation
     if loadresults
@@ -88,7 +90,7 @@ function PBM_tests()
 
     %Calculate analytic solution
     if loadresults_analytical
-        analytical = load('Data/Studies/Analytical/Validation_Breakage_directsol_09-Apr-2026 16-40-48.mat');
+        analytical = load('Data/Studies/Analytical/Validation_Breakage_directsol_05-May-2026 10-58-11.mat');
         analytical = analytical.directsol;
         ts_comp = analytical.t; ns = analytical.y; ni = ns;
         vs = logspace(log10(1E-5), log10(1), length(ns(end,:)));
@@ -143,11 +145,13 @@ function PBM_tests()
 
 
     %Calculate number
+    ni = ni * 7.8837;
     Nvs_analytical = numel(ni)./length(ts_comp);
     Nt_analytical = zeros(1, length(ts_comp));
     for i = 1:length(ts_comp)
         Nt_analytical(i) = sum(ni(i,:))./Nvs_analytical;
     end
+    Nti_analytical = Nt_analytical;
     Nt_analytical = Nt_analytical./Nt_analytical(1);
 
     [~,ind6_ref] = min(abs(Nt_analytical - 6)); Nt_6_ref = Nt_analytical(ind6_ref);
@@ -176,15 +180,19 @@ function PBM_tests()
 
 
     [~, t10_ind] = min(abs(ts - 10));
+    [~, t500_ind] = min(abs(ts-500));
     [~, t10_ind_analytical] = min(abs(ts_comp - 10));
+    [~, t500_ind_analytical] = min(abs(ts_comp - 500));
 
     
-    loglog(params.Vms, ys(1,:), 'k.'); hold on;
-    loglog(params.Vms, ys(t10_ind,:), 'ko');
+    %loglog(params.Vms, ys(1,:), 'k.'); hold on;
+    loglog(params.Vms, ys(t10_ind,:), 'ko'); hold on
+    loglog(params.Vms, ys(t500_ind,:), 'bo');
     %loglog(params.Vms, ys(ind300,:), 'k+');
 
-    loglog(vs, ns(1,:), 'm.');
-    loglog(vs, ns(t10_ind_analytical,:));
+    %loglog(vs, ns(1,:), 'm.');
+    loglog(vs, ns(t10_ind_analytical,:), 'k-');
+    loglog(vs, ns(t500_ind_analytical,:), 'b-');
     %loglog(vs, ns(ind300_ref,:));
     %loglog(vs, ns(3,:));
     %loglog(params.Vms, n_constant(end,:), 'k-');
@@ -194,15 +202,22 @@ function PBM_tests()
     ylim([1E-5, 10000]); xlim([inputs.disc.r_min, inputs.disc.r_max])
     xlabel('Particle Volume (m^3)'); ylabel('Number density (1/m^3)');
     axis square; grid on; 
+    legend('Numerical - t = 10s', 'Numerical - t = 500s', 'Analytical - t = 10 s', 'Analytical - t = 500s');
+    set(gca,'FontSize', fs);
+    title('Breakage Analytical Case');
 
     % subplot(1,2,2);
     % semilogx(xs, n_constant_normal);
     
-
+end
 
 
 %% Test 3 - Constant Coalescence Numerical Test 
 
+    %Settings
+    load_solution = true;
+    lw = 1.5;
+    ms = 10;
 
     %Specify output folder
     output_folder = 'Data/Studies/Analytical/';
@@ -218,6 +233,7 @@ function PBM_tests()
     inputs.src.coalesce_model = 'Scott_1968'; % 'Hounslow_1988'; 'Scott_1968' 
     inputs.src.coalesce_constant_rate = C;
     inputs.sol.heat.active = false;
+    inputs.sol.react.active = false;
     inputs.disc.r_min = 1E-5; %For this case, the unit is m3
     inputs.disc.r_max = 10000;
     inputs.disc.Nms = 150;
@@ -230,13 +246,37 @@ function PBM_tests()
 
 
     %Run simulation
-    results = PBM_v3(inputs);
+    if load_solution
+        results = load('Data/Studies/Analytical/Validation_Coalescence_11-May-2026 21-14-05.mat');
+        results = results.results;
+    else
+
+        %Run simulation
+        results = PBM_v3(inputs);
+        
+
+        %Save results
+        timestr = strrep(datestr(now), ':', '-');
+        outname = sprintf('Validation_Coalescence_%s.mat', timestr);
+        outpath = ['Data/Studies/Analytical/', outname];
+        save(outpath, 'results');
+
+    end
+
+
+    %Load analytical results from Kumar graph
+    kumar1 = readtable('Data/Studies/Analytical/Kumar_analytical_0074.csv');
+    kumar2 = readtable('Data/Studies/Analytical/Kumar_analytical_0008.csv');
+    kumar1 = table2array(kumar1); kumar2 = table2array(kumar2);
+
 
 
     %Ode solution
     ys = results.y;
     ts = results.t;
     params = results.params;
+
+    %Save solution
 
     %Will calculate at whatever T is desired 
     Vbs = params.disc.Vbs;
@@ -298,16 +338,26 @@ function PBM_tests()
     Fvals = F_func(params.Vms);
 
     
-    loglog(params.Vms, ys(1,:), 'k.'); hold on;
-    loglog(params.Vms, ys(6,:), 'ko');
-    loglog(params.Vms, ys(484,:), 'k+');
-    loglog(params.Vms, n_constant(end,:), 'k-');
-    loglog(params.Vms, n_constant(2,:), 'k--');
-    loglog(params.Vms, n_constant(1,:), 'k:')
+    loglog(params.Vms, ys(1,:), 'b.', 'MarkerSize', ms); hold on;
+    loglog(params.Vms, ys(6,:), 'bo', 'MarkerSize', ms);
+    loglog(params.Vms, ys(484,:), 'b+', 'MarkerSize', ms, 'Marker', "square");
+    loglog(params.Vms, n_constant(1,:), 'k--', 'LineWidth', lw); hold on;
+    loglog(params.Vms, n_constant(2,:), 'k:', 'LineWidth', lw)
+    loglog(params.Vms, n_constant(end,:), 'k-', 'LineWidth', lw);
+    
+    %loglog(kumar1(:,1), kumar1(:,2), 'k--');
+    %loglog(kumar2(:,1), kumar2(:,2), 'k:');
+    %l
     %loglog(params.Vms, Fvals, 'k--');
     ylim([1E-15, 1000]); xlim([inputs.disc.r_min, inputs.disc.r_max])
     xlabel('Particle Volume (m^3)'); ylabel('Number density (1/m^3)');
     axis square; grid on; 
+    title('Coalescence Analytical Case')
+    set(gca,'FontSize', 18);
+
+    
+    legend('PBM - t = 0 s', 'PBM - t = 10 s', 'PBM - t = 1000 s', ...
+        'Ref. - t = 0 s', 'Ref. - t = 10 s', 'Ref. - t = 1000 s');
 
     % subplot(1,2,2);
     % semilogx(xs, n_constant_normal);
@@ -475,7 +525,7 @@ function [n_constant, phi_constant_out] = Scott_1968(ts, N0, v0, C, params)
     v_bar = integral(v_func, 1E-9, 1E5)/integral(n_func, 1E-9, 1E5);
     v0 = v_bar;
 
-    N_sum_vals = 30;
+    N_sum_vals = 1000;
 
     %Calculate input values 
     vs = params.Vms;
@@ -498,22 +548,22 @@ function [n_constant, phi_constant_out] = Scott_1968(ts, N0, v0, C, params)
         phi_sum_func = @(x,T,k) (((x.*(nu+1)).^((nu+1).*(k+1)))./(gamma((nu+1).*(k+1)))) .* (T./(T+2)).^k;
 
 
-        % %Calculate sum at this time
+        %Calculate sum at this time
         % phi_sum_vals = zeros(N_sum_vals, length(xs));
         % for k = 0:(N_sum_vals-1)
         %     phi_sum_vals(k+1,:) = phi_sum_func(xs, T, k);
         % end
         % phi_sum_vals(isinf(phi_sum_vals)) = 0;
         % phi_sum_vals(isnan(phi_sum_vals)) = 0;
-        % 
         % phi_sum = sum(phi_sum_vals);
 
         %Calculate non-dim spectrum
 
         sinh_ins = 2.*xs.*sqrt(T./(T+2));
         exp_ins = -2.*xs;
-        phi_constant = (8 .* exp(exp_ins) .* sinh(sinh_ins))./...
-            (sqrt(T) .* (T+2).^1.5);
+        sinh_vals = (exp(sinh_ins) - exp(-sinh_ins))./2;
+        phi_constant = (8 .* exp(exp_ins) .* sinh_vals)./... %sinh(sinh_ins))./...
+             (sqrt(T) .* (T+2).^1.5);
         
         % phi_constant = zeros(1,length(params.Vms));
         % for ix = 1:length(params.Vms)
@@ -527,12 +577,12 @@ function [n_constant, phi_constant_out] = Scott_1968(ts, N0, v0, C, params)
         %     phi_sum = sum(phi_sum_vals);
         %     phi_constant(ix) = (4.*exp(-(nu+1).*x))./(x.*(T+2).^2) .* phi_sum; %4 .* exp(-2.*xs./(T+2))./((T+2).^2); %%(8 .* exp(-2.*xs) .* sinh(2.*xs.*sqrt(T./(T+2))))./(sqrt(T) .* (T+2).^(1.5));  %(4.*exp(-(v+1).*xs))./(xs.*(T+2).^2) .* sum(phi_sum_vals); %4 .* exp(-2.*xs./(T+2))./((T+2).^2); %
         % end
-        phi_constant(isnan(phi_constant)) = 0;
-        phi_constant_out(i,:) = phi_constant;
+        % phi_constant(isnan(phi_constant)) = 0;
+        % phi_constant_out(i,:) = phi_constant;
 
         %Convert to actual spectrum
         
-        n_constant(i, :) = (N0/v0) .* phi_constant;
+        n_constant(i, :) = (N0/v0) * phi_constant; %4*N0*exp(-2*vs/(v0*(T+2)))./(v0*(T+2).^2); %(N0/v0) * phi_constant;  %4*N0*exp()./(v0*(N0*).^2); %(N0/v0) .* phi_constant;
         
 
     end
@@ -547,8 +597,8 @@ function [n_constant, phi_constant_out] = Hounslow_1988(ts, N0, v0, C, params)
  
 
     %Create output storage vector
-    v0 = v0*2;
-    N0 = 0.2*N0;
+    v0 = 2*v0;
+    N0 = N0;
     n_constant = zeros(length(ts), length(params.Vms));
     n_tilde = n_constant;
     Nt_analytic = zeros(length(ts));
@@ -590,7 +640,7 @@ function [t, y] = solve_breakage_ref(tmax, B0)
     params.B0 = B0;
 
     %Solve ode
-    tspan = [0 tmax];
+    tspan = 0:1:tmax;
     odeopts = odeset('RelTol', 1e-6, 'AbsTol', 1e-6, 'InitialStep', 0.0001,'MaxStep', 10);
     breakage_ode_in = @(t,y) breakage_ode(t,y,params);
     [t, y] = ode15s(breakage_ode_in, tspan, ns, odeopts);
@@ -627,8 +677,8 @@ function dndt = breakage_ode(t,n, params)
         %beta = 1;
 
         n_func = @(v_p) interp1(params.vs, n, v_p, 'nearest', 'extrap');
-        int_func = @(v_p) 2.*n_func(v_p).*v_p.*params.B0; 
-        dndt(iv) = integral(int_func, v, v_max) - n(iv)*params.B0*v^2;
+        int_func = @(v_p) 2.*n_func(v_p).*v_p.*params.B0*7.8837; 
+        dndt(iv) = integral(int_func, v, v_max) - n(iv)*params.B0*7.8837*v^2;
 
 
 

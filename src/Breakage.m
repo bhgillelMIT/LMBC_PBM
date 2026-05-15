@@ -1,4 +1,4 @@
-function [b_src, b_snk, b_mats] = Breakage(y, params, local)
+function [b_src, b_snk, b_mats, params] = Breakage(y, params, local)
 
     %Handle less than 3 inputs
     if nargin < 3
@@ -6,9 +6,9 @@ function [b_src, b_snk, b_mats] = Breakage(y, params, local)
     end
 
     %Make parameters global
-    if ~local
-        global params
-    end
+    %if ~local
+    %    global params
+    %end
 
     %Debug message
     if params.debug
@@ -41,8 +41,10 @@ function [b_src, b_snk, b_mats] = Breakage(y, params, local)
     %Determien iz inds to use
     if params.sol.sep_layer & strcmp(params.sol.type, 'segregated')
         iz_inds = params.iz;
+    elseif params.sol.single_layer
+        iz_inds = 1;
     else
-        iz_inds = 1:params.Nz;
+        iz_inds = 2:params.Nz;
     end
 
 
@@ -352,11 +354,14 @@ function [b_src, b_snk, b_mats] = Breakage(y, params, local)
 
          %Check mass conservation and rescale 
         if params.src.debug
-            params.break.m_src(params.src.its) = sum(b_src .* [repmat(params.mms, 1, params.Nz)]); %params.mms_rep); %[repmat(params.mms, 1, params.Nz)]'); %Derived from the distribution equations
-            params.break.m_snk(params.src.its) = sum(b_snk .* [repmat(params.mms, 1, params.Nz)]); %params.mms_rep); %[repmat(params.mms, 1, params.Nz)]'); %Calculated
-                
+            %params.break.m_src(params.src.its) = sum(b_src .* [repmat(params.mms, 1, params.Nz)]); %params.mms_rep); %[repmat(params.mms, 1, params.Nz)]'); %Derived from the distribution equations
+            %params.break.m_snk(params.src.its) = sum(b_snk .* [repmat(params.mms, 1, params.Nz)]); %params.mms_rep); %[repmat(params.mms, 1, params.Nz)]'); %Calculated
+            m_snk = sum(b_src .* [repmat(params.mms, 1, params.Nz)]); %params.mms_rep); %[repmat(params.mms, 1, params.Nz)]');
+            m_src = sum(b_snk .* [repmat(params.mms, 1, params.Nz)]);
+
+
             %Normalize distributions
-            b_src = (params.break.m_snk(params.src.its)./(params.break.m_src(params.src.its) + 1E-32)) .* b_src;
+            b_src = m_snk/(m_src+1E-32) .* b_src; %(params.break.m_snk(params.src.its)./(params.break.m_src(params.src.its) + 1E-32)) .* b_src;
         
         end
 
@@ -832,7 +837,7 @@ function [b_eddy, beta] = BreakageEddyUniformBinary(iz, im, d, Ns_cell, params)
     
 
     %Calculate breakage rate
-    [~,minind] = min(abs(params.Vms - 1));
+    minind = find(params.Vms == 1); %min(abs(params.Vms - 1));
     if im >= minind
         b_eddy = b0 * 1^2;
     else

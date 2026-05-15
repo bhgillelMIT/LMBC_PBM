@@ -4,7 +4,8 @@ function  [T,Y] = PBM_solver(tspan, y0, params, options, varargin)
 
 
     %Make parameters global
-    global params
+    %global params
+    global output
     
     solver_name = 'PBM_solver';
 
@@ -183,6 +184,17 @@ function  [T,Y] = PBM_solver(tspan, y0, params, options, varargin)
             T = Tfin;
             Y = Yfin;
 
+
+        case 'ode45'
+
+            [T,Y] = ode45(@(t,y) PBM_ode(t,y,params), tspan, y0, ode45opts);    
+
+        case 'ode15s'
+
+            [T,Y] = ode15s(@(t,y) PBM_ode(t,y,params), tspan, y0, ode45opts);
+
+        case 'ode'
+
         otherwise % use solver directly 
 
             %Print update
@@ -192,11 +204,19 @@ function  [T,Y] = PBM_solver(tspan, y0, params, options, varargin)
             if params.sol.src_delay > 0
                 tspan1 = [tspan(1), params.sol.src_delay];
             else
-                tspan1 = [tspan(1), 0.2]; %min([0.1, 0.025*tspan(end)])];
+                tspan1 = [tspan(1), 0.25]; %min([0.1, 0.025*tspan(end)])];
             end
             
             [T1,Y1] = ode45(@(t,y) PBM_ode(t,y,params), tspan1, y0, ode45opts);
             ms1 = params.m_total;
+
+            %Calcualte jacobian
+            t0 = tspan1(end); y0 = Y1(end,:);
+            tspan2 = [tspan1(end), tspan(end)];
+            [jac, jac_sparsity] = CalcJacobian(@(t,y) PBM_ode(t,y,params), tspan2, y0, ode15opts)
+
+
+            jac = odenumjac(ode, {t0,y0,odeArgs{:}}, f0, Joptions);
 
             %Full run
             y0 = Y1(end,:);

@@ -6,9 +6,9 @@ function [c_src, c_snk, c_mats] = Coalescence(y, params, local)
     end
 
     %Make parameters global
-    if ~local
-        global params
-    end
+    % if ~local
+    %     global params
+    % end
 
     %Debug message
     if params.debug
@@ -32,8 +32,10 @@ function [c_src, c_snk, c_mats] = Coalescence(y, params, local)
     %Determien iz inds to use
     if params.sol.sep_layer & strcmp(params.sol.type, 'segregated')
         iz_inds = params.iz;
+    elseif params.sol.single_layer
+        iz_inds = 1;
     else
-        iz_inds = 1:params.Nz;
+        iz_inds = 2:params.Nz;
     end
     
     
@@ -331,9 +333,12 @@ function [c_src, c_snk, c_mats] = Coalescence(y, params, local)
     if params.src.debug
         N_src = sum(c_src);
         N_snk = sum(c_snk);
-        params.coalesce.m_src(params.src.its) = sum(c_src .* [repmat(params.mms, 1, params.Nz)]'); %params.mms_rep); %[repmat(params.mms, 1, params.Nz)]');
-        params.coalesce.m_snk(params.src.its) = sum(c_snk .* [repmat(params.mms, 1, params.Nz)]'); %params.mms_rep); %[repmat(params.mms, 1, params.Nz)]');
-        c_src = (params.coalesce.m_snk(params.src.its)./(params.coalesce.m_src(params.src.its) + 1E-16)) * c_src;
+        %params.coalesce.m_src(params.src.its) = sum(c_src .* [repmat(params.mms, 1, params.Nz)]'); %params.mms_rep); %[repmat(params.mms, 1, params.Nz)]');
+        %params.coalesce.m_snk(params.src.its) = sum(c_snk .* [repmat(params.mms, 1, params.Nz)]'); %params.mms_rep); %[repmat(params.mms, 1, params.Nz)]');
+        m_src = sum(c_src .* [repmat(params.mms, 1, params.Nz)]');
+        m_snk = sum(c_snk .* [repmat(params.mms, 1, params.Nz)]');
+        
+        c_src = m_snk./(m_src + 1E-32) * c_src; %(params.coalesce.m_snk(params.src.its)./(params.coalesce.m_src(params.src.its) + 1E-16)) * c_src;
     
     end
 
@@ -596,7 +601,7 @@ function c_jk = Coalescence_constant(y, j,k, zind, params, turb)
     c_constant = params.coalesce.constant_rate; %Applies to all 
     
 
-    c_jk = 0.5*c_constant;
+    c_jk = c_constant;
 
 end
 

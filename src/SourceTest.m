@@ -23,6 +23,7 @@ function SourceTest(params)
     paramsin.src.solve_eps = false;
     paramsin.src.solve_alphag = false;
     paramsin.src.alphag_manual = 0.1;
+    paramsin.sol.single_layer = true;
 
 
     %Update input values to simplify analysis
@@ -193,16 +194,23 @@ function SourceTest(params)
         %Plot a comparison of wang and luo models
         figure();
 
-        semilogy(params.dms, cadd_eddy, 'b-', 'LineWidth', lw); hold on;
-        semilogy(params.dms, cadd_wang_turb_rise, 'b-', 'LineWidth', lw, 'Color', [0.1, 0.8, 0.6]); hold on;
-        semilogy(params.dms, cadd_pb, 'c-', 'LineWidth', lw); hold on;
-        semilogy(params.dms, csub_eddy, 'b--', 'LineWidth', lw); hold on;
-        semilogy(params.dms, csub_wang_turb_rise, 'r--', 'LineWidth', lw, 'Color', [0.1, 0.8, 0.6]); 
-        semilogy(params.dms, csub_pb, 'c--', 'LineWidth', lw); hold on;
+        semilogy(params.dms, cadd_eddy, 'b-', 'LineWidth', lw, 'Color', [20/255, 52/255, 164/255]); hold on;
+        semilogy(params.dms, cadd_wang_turb_rise, 'b-', 'LineWidth', lw, 'Color', [0, 150/255, 1]); hold on;
+        semilogy(params.dms, cadd_wang, 'b-', 'LineWidth', lw, 'Color', [0,1,1])
+        semilogy(params.dms, cadd_pb, 'c-', 'LineWidth', lw, 'Color', [0.8, 0.2, 0.1]); hold on;
+        semilogy(params.dms, csub_eddy, 'b--', 'LineWidth', lw, 'Color', [20/255, 52/255, 164/255]); hold on;
+        semilogy(params.dms, csub_wang_turb_rise, 'r--', 'LineWidth', lw, 'Color', [0, 150/255, 1]); 
+        semilogy(params.dms, csub_wang, 'r--', 'LineWidth', lw, 'Color', [0,1,1]);
+        semilogy(params.dms, csub_pb, 'c--', 'LineWidth', lw, 'Color', [1, 0.2, 0.1]); hold on;
         xlabel('Diameter (m)'); ylabel('Coalescence Rate (1/s)'); 
         title(['Coalescence Comparison (\epsilon = ', num2str(epss(ie)), ')']);
         grid on; grid minor; axis square;
-        legend('cadd - turb', 'cadd - turb + rise', 'cadd - pb', 'csub - turb', 'csub - turb + rise', 'csub - pb', 'location', 'southeast');
+
+    
+
+        legend('c^+_{wang} - turb', 'c^+_{wang} - turb + rise', 'c^+_{wang} - turb + rise + wake',  'c^+_{prince} - turb + rise',...
+            'c^-_{wang} - turb', 'c^-_{wang} - turb + rise','c^-_{wang} - turb + rise + wake', 'c^-_{prince} - turb + rise',...
+            'location', 'southeast');
         ylim([1E-3, 1E8]) 
         set(gca, 'FontSize', fs);
 

@@ -6,9 +6,9 @@ function params = CalcLocalProperties(y, params, local)
     end
 
     %Make params global if not local
-    if ~local
-        global params
-    end
+    % if ~local
+    %     global params
+    % end
 
     %Resolve local gas velocity
     %params.ug = 0.3; %TEMPORARY
@@ -28,8 +28,12 @@ function params = CalcLocalProperties(y, params, local)
 
         cellinds = ((iz-1).*params.Nms + 1):1:(iz.*params.Nms);
 
-        %Pull numeric densities in this spatial celll
-        Ns_cell = params.Ns_m(cellinds); %y(cellinds);
+        %Pull numeric densities in this spatial cell
+        if all(y == y(1)) %Source test case
+            Ns_cell = y(cellinds);
+        else
+            Ns_cell = params.Ns_m(cellinds); %y(cellinds);
+        end
 
 
         %Calculate gas holdup
@@ -44,17 +48,19 @@ function params = CalcLocalProperties(y, params, local)
             params.d_mu(iz, ix) = ((6 .* params.V_mu(iz, ix))./pi).^(1/3);
 
             if any(~isreal(params.d_mu))
-                x = 1;
+                
             end
 
 
             %Calculate current bubble velocities
             if params.sol.solve_ub
                 if ~isreal(params.d_mu(iz,ix))
-                    x = 1;
+                    params.uz_mu(iz, ix) = 0.3; %params.ubs.funcs{iz}();
+                else
+                    params.uz_mu(iz, ix) = params.ubs.funcs{iz}(params.d_mu(iz, ix));
                 end
 
-                params.uz_mu(iz, ix) = params.ubs.funcs{iz}(params.d_mu(iz, ix));
+                %params.uz_mu(iz, ix) = params.ubs.funcs{iz}(params.d_mu(iz, ix));
             else
                 if length(params.sol.ub_manual) == params.Nms
                     params.uz_mu(iz, ix) = params.sol.ub_manual(ix);

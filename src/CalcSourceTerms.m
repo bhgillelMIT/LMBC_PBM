@@ -1,6 +1,7 @@
 function [h, h_m, cadd, csub, badd, bsub, params] = CalcSourceTerms(t, F, params)
 
-    global params
+    %global params
+    global output
 
 
     if t < params.sol.src_delay

@@ -8,6 +8,7 @@
 function h = DistSourceTerms(y, h_m, cadd, csub, badd, bsub, params)
 
     %Settings
+    reltol = 1E-6;
     debug = true;
     if debug
         %debugfig = figure();
@@ -46,9 +47,19 @@ function h = DistSourceTerms(y, h_m, cadd, csub, badd, bsub, params)
             end
 
             %Pull relevant Ts
-            relinds_z = find(zinds == iz); %indices in this spatial cell
-            relTs_z = params.Ts(zinds == iz);
+            zinds_z = zinds == iz;
+            relinds_z = find(zinds_z); %indices in this spatial cell
+            relTs_z = params.Ts(zinds_z);
+            relits_z = params.Tinds(zinds_z);
+            relXs_z = params.Xs(zinds_z);
+            relixs_z = params.Xinds(zinds_z);
             relys = y(relinds_z);
+
+            %Calcualte largest T and X
+            zm = params.zms(iz);
+            T_largest = interp1(params.T_z.chars.largest.zs, params.T_z.chars.largest.Ts, zm);
+            X_largest = interp1(params.T_z.chars.largest.zs, params.T_z.chars.largest.Xs, zm);
+
 
             %Iterate through each mass - receiving influx (sink)
             for im = 1:params.Nms
@@ -76,6 +87,44 @@ function h = DistSourceTerms(y, h_m, cadd, csub, badd, bsub, params)
                 snkN = params.Ns_m(subind_m);
                 snkNs = y(subinds, :); %All subbins for this mass
                 snkTs = params.Ts(subinds);
+                snkXs = params.Xs(subinds);
+                snkit = params.Tinds(subinds);
+                snkix = params.Xinds(subinds);
+                snkTinds = params.Tinds(subinds);
+                snkXinds = params.Xinds(subinds);
+                snkT_aboves = params.Ts_above(subinds);
+                snkX_aboves = params.Xs_above(subinds);
+                snkT_finals = params.Ts_final(subinds);
+                snkX_finals = params.Xs_final(subinds);
+
+                %Determine which of the bins are trialing 
+                snk_trailing_T = abs(snkTs - T_largest)./T_largest < reltol;
+                snk_trailing_X = abs(snkXs - X_largest)./X_largest < reltol;
+                snk_trailing = snk_trailing_T & snk_trailing_X;
+
+                %Pull the active matrix for the cells
+                snk_actives = cell2mat(params.cell_active(subinds));
+
+                %Identify the trailing bin to assign other trailing points
+                %to
+                [X_trailing_max, maxind] = max(snkX_finals(snk_trailing));
+                snk_trailing_inds = find(snk_trailing);
+                snk_trailing_ind = snk_trailing_inds(maxind); %Bin to assign incoming trailing points to
+
+                %Identify smallest and largest bins - the one with the
+                %lowest final conversion
+                if any(snk_trailing)
+                    [X_trailing_min, minind] = min(snkX_finals(snk_trailing));
+                    snk_min_inds = find(snkX_finals == X_trailing_min);
+                    snk_min_ind = snk_min_inds(1);
+                else
+                    snk_min_ind = 1;
+                end
+
+                [X_max, maxind] = max(snkX_finals(~snk_trailing));
+                snk_max_inds = find(snkX_finals == X_max);
+                snk_max_ind = snk_max_inds(end);
+
 
                 %Calculate fluxes
                 h_iT_in = zeros(size(snkTs));
@@ -122,7 +171,7 @@ function h = DistSourceTerms(y, h_m, cadd, csub, badd, bsub, params)
                     if any(cvec > 0)
                         cvec_norm = cvec./sum(cvec);
                     else
-                        cvec_norm = ones(size(cvec));
+                        cvec_norm = zeros(size(cvec));
                     end
 
                     %Convert to mass flux 
@@ -137,16 +186,23 @@ function h = DistSourceTerms(y, h_m, cadd, csub, badd, bsub, params)
                     for i = 1:length(srcinds_m)
 
                         %Pull index and normalized value
-                        ind = srcinds_m(i);
+                        ind = srcinds_m(i); %Mass bin of this source
                         bnorm = bvec_norm(ind);
                         cnorm = cvec_norm(ind);
                         babs = bvec(ind); %Absolute flux from this 
                         cabs = cvec(ind);
                         sabs = babs + cabs; %Total influx of source terms
         
-                        %Pull temperatures
+                        %Pull temperatures and conversions
                         srcinds_T = find(xinds(relinds_z) == ind); %Indices of the numeric density corresponding to the source mass
                         srcTs = relTs_z(srcinds_T);
+                        srcit = relits_z(srcinds_T);
+                        srcTs_above = params.Ts_above(relinds_z(srcinds_T));
+                        srcXs = relXs_z(srcinds_T);
+                        srcix = relixs_z(srcinds_T);
+                        srcXs_above = params.Xs_above(relinds_z(srcinds_T));
+
+                        %Determine the actual bins the 
                         srcNs = relys(srcinds_T);
                         if all(srcNs == 0)
                             srcNfracs = srcNs./(sum(srcNs)+1E-32);
@@ -168,38 +224,294 @@ function h = DistSourceTerms(y, h_m, cadd, csub, badd, bsub, params)
                         %Iterate through each source 
                         for it_src = 1:length(srcTs)
                             T = srcTs(it_src);
+                            X = srcXs(it_src);
                             N = srcNs(it_src);
                             Nfrac = srcNfracs(it_src);
 
                             %Identify the adjacent cells in the sink mass
-                            if T < min(snkTs) %Case where it goes into the last trailing bin
-                              
-                                h_iT_in(1) = h_iT_in(1) + sabs * Nfrac;
-                                
-                                %Adjust temperature to preserve energy -
-                                %ADD
-                           
+                            if Nfrac > 0
+                                if params.react.active
 
-                            elseif T >= max(snkTs)
+                                    %Categorize the point
+                                    trailing = abs(T-T_largest) < 0.0001 & abs(X-X_largest) < 0.0001; %logical - is the source bin a trailing bin
+                                    trailing = trailing | (T <= T_largest & X <= X_largest);
+                                    smaller_T = all(T < snkTs);
+                                    smaller_X = all(X < snkXs);
+                                    smaller = smaller_T & smaller_X;
+                                    larger_T = all(T > snkTs);
+                                    larger_X = all(X > snkXs);
+                                    larger = larger_T & larger_X;
+                                    matchingT = abs(T - snkTs)/T < reltol;
+                                    matchingX = abs(X - snkXs)/X < reltol;
+                                    matchingBOTH = matchingT & matchingX;
 
-                                h_iT_in(end) = h_iT_in(end) + sabs * Nfrac;
+                                    %Distribute 
+                                    if trailing %Distribute to the bin that reaches the largest final conversion
+                                        h_iT_in(snk_trailing_ind) = h_iT_in(snk_trailing_ind) + sabs * Nfrac;
+                                    else %Determine which bin to assign it to
+                                        if smaller
+                                            h_iT_in(snk_min_ind) = h_iT_in(snk_min_ind) + sabs * Nfrac;
+                                        elseif larger
+                                            h_iT_in(snk_max_ind) = h_iT_in(snk_max_ind) + sabs * Nfrac;
+                                        else %Determine which bin it fits into of the active bins
+                        
+                                            
 
-                            else %Identify closest two bins and distribute between them
+                                            %Consider only the active bins
+                                            actives = snk_actives(:,1);
+                                            actives_inds = find(actives);
+                                            
+                                            snkXs_active = snkXs(actives);
+                                            snkTs_active = snkTs(actives);
 
-                                %Identify closest two bins
-                                snk_lo = max(find((snkTs - T) <= 0));
-                                snk_hi = min(find((snkTs - T) > 0));
+                                            %Determine if there is one bin
+                                            %that matches perfectly
+                                            X_match = snkXs_active == X;
+                                            T_match = snkTs_active == T;
+                                            BOTH_match = X_match & T_match;
+                                            
+                                            N_match = length(find(BOTH_match));
+                                            if N_match == 1
+                                                ind = actives_inds(BOTH_match);
+                                                h_iT_in(ind) = h_iT_in(ind) + sabs * Nfrac;
+                                            elseif N_match > 1
 
-                                %Calculate division using 
-                                eta_lo = (snkTs(snk_hi) - T)./(snkTs(snk_hi) - snkTs(snk_lo));
-                                eta_hi = 1 - eta_lo;
+                                                %Identify the indices that
+                                                %result in the highest
+                                                %conversion
+                                                X_finals = snkX_finals(actives);
+                                                X_finals_BOTH = X_finals(BOTH_match);
+                                                X_finals_max = max(X_finals_BOTH);
+                                                active_inds = find(actives);
+                                                BOTH_match_inds = find(BOTH_match);
+                                                max_inds = X_finals_BOTH == X_finals_max;
+                                                max_inds = find(X_finals_BOTH(find(max_inds)));
+                                                snk_inds = active_inds(BOTH_match_inds(max_inds));
+                                                N_inds = length(snk_inds);
 
-                                %Distribute
-                                h_iT_in(snk_lo) = h_iT_in(snk_lo) + eta_lo * sabs * Nfrac;
-                                h_iT_in(snk_hi) = h_iT_in(snk_hi) + eta_hi * sabs * Nfrac;
 
-                                x = 1;
+                                                %Distribute between them
+                                                %equally
+                                                dist_frac = 1/N_inds;
+                                                for is = 1:N_inds
+                                                    snk_ind = snk_inds(is);
+                                                    h_iT_in(snk_ind) = h_iT_in(snk_ind) + dist_frac*sabs*Nfrac;
+                                                end
 
+
+                                                x = 1;
+                                            else %Identify the bin it is closest to
+
+                                                err_X = cell(1, params.chars.N_Xis);
+                                                err_T = cell(1, params.chars.N_Xis);
+                                                err_T_diff = cell(1, params.chars.N_Xis);
+                                                err_min = zeros(1, params.chars.N_Xis);
+                                                err_X_diff = cell(1, params.chars.N_Xis);
+                                                err_total = cell(1, params.chars.N_Xis);
+                                                for ix = 1:params.chars.N_Xis
+
+                                                    %Define sub indices 
+                                                    subinds_X = snkXinds == ix;
+
+                                                    %Pull Ts
+                                                    Ts_X = snkTs(subinds_X);
+                                                    Xs_X = snkXs(subinds_X);
+
+                                                    %Calculate err
+                                                    err_X{ix} = X - Xs_X;
+                                                    err_X_diff{ix} = diff(err_X{ix});
+                                                    err_T{ix} = T - Ts_X;
+                                                    err_T_diff{ix} = diff(err_T{ix});
+                                                    err_total{ix} = sqrt((err_X{ix}./X).^2 + (err_T{ix}./T).^2);
+                                                    err_min(ix) = min(err_total{ix});
+
+                                                end
+            
+                                                %Identify the actual bins
+                                                %to divide between
+                                                [min_err, ix_min] = min(err_min);
+                                                err_totals = err_total{ix_min};
+                                                [min_err, iT_min] =  min(err_totals);
+                                                if iT_min == 1
+                                                    snk_lo = find(iT_min == snkTinds & ix_min == snkXinds);
+                                                    snk_hi = find(iT_min+1 == snkTinds & ix_min == snkXinds);
+                                                elseif iT_min == length(err_totals)
+                                                    snk_lo = find(iT_min-1 == snkTinds & ix_min == snkXinds);
+                                                    snk_hi = find(iT_min == snkTinds & ix_min == snkXinds);
+                                                else
+                                                    err_neg = err_totals(iT_min-1);
+                                                    err_pos = err_totals(iT_min+1);
+                                                    if err_neg < err_pos
+                                                        snk_lo = find(iT_min-1 == snkTinds & ix_min == snkXinds);
+                                                        snk_hi = find(iT_min == snkTinds & ix_min == snkXinds);
+                                                    else
+                                                        snk_lo = find(iT_min == snkTinds & ix_min == snkXinds);
+                                                        snk_hi = find(iT_min+1 == snkTinds & ix_min == snkXinds);
+                                                    end
+                                                end
+                                                
+                                                %Distribute
+                                                snk_ind = find(iT_min == snkTinds & ix_min == snkXinds);
+                                                h_iT_in(snk_ind) = h_iT_in(snk_ind) + sabs*Nfrac;
+
+
+                
+                                                % 
+                                                % %Identify T bounds
+                                                % T_lower = max(snkTs_active(snkTs_active <= T));
+                                                % T_upper = min(snkTs_active(snkTs_active >= T));
+                                                % T_lower_inds = find(snkTs_active == T_lower);
+                                                % T_upper_inds = find(snkTs_active == T_upper);
+                                                % 
+                                                % 
+                                                % %Identify X bounds
+                                                % X_lower = max(snkXs_active(snkXs_active <= X));
+                                                % X_upper = min(snkXs_active(snkXs_active >= X));
+                                                % X_lower_inds = find(snkXs_active == X_lower);
+                                                % X_upper_inds = find(snkXs_active == X_upper);
+
+                                                % %Identify closest two bins
+                                                % snk_lo = max(find((snkTs(actives) - T) <= 0));
+                                                % snk_hi = min(find((snkTs(actives) - T) > 0));
+                                                % 
+                                                % 
+                                                % %Calculate division using 
+                                                % eta_lo = (snkTs(snk_hi) - T)./(snkTs(snk_hi) - snkTs(snk_lo));
+                                                % eta_hi = 1 - eta_lo;
+                                                % 
+                                                % %Distribute
+                                                % h_iT_in(snk_lo) = h_iT_in(snk_lo) + eta_lo * sabs * Nfrac;
+                                                % h_iT_in(snk_hi) = h_iT_in(snk_hi) + eta_hi * sabs * Nfrac;
+
+
+                                            
+                                            end
+
+                                            
+
+
+        
+                                            
+    
+                                    
+
+                                            x = 1;
+
+                                        end
+
+                                    end
+
+                                    % 
+                                    % %Determine which snk bins are active or
+                                    % %activating
+                                    % active_now = snk_actives(:,1);
+                                    % if iz ~= params.Nz
+                                    %     active_next = snk_actives(:,2);
+                                    % else
+                                    %     active_next = false(size(active_now));
+                                    % end
+                                    % activating = active_next & ~active_now;
+                                    % 
+                                    % matching_active = matchingBOTH & active_now;
+                                    % matching_activating = matchingBOTH & activating;
+
+                                    
+                                    
+    
+                                    % if T < min(snkTs) %Case where it goes into the last trailing bin
+                                    % 
+                                    %     h_iT_in(1) = h_iT_in(1) + sabs * Nfrac;
+                                    % 
+                                    % elseif T >= max(snkTs)
+                                    % 
+                                    %     h_iT_in(end) = h_iT_in(end) + sabs * Nfrac;
+                                    % 
+                                    % elseif any(matchingBOTH) %Indicates likely a trailing bin
+                                    % 
+                                    %     %Determien which sink is largest at the
+                                    %     %end
+                                    %     if length(find(matchingBOTH)) > 1
+                                    % 
+                                    % 
+                                    %         Xs_final_valid = cell2mat(snkX_aboves(matching_activating));
+                                    %         [largest_X, largest_ind] = max(Xs_final_valid(:,end));
+                                    % 
+                                    %         %Determine if there remain multiple -
+                                    %         %ONLY DO THIS IF TRAILING
+                                    %         %bins or if there are too few
+                                    %         if length(largest_ind) == 0
+                                    %             error('No valid index to assign to. Programming error.');
+                                    %         elseif length(largest_ind) > 1
+                                    %             assign_ind = find(matching_activating);
+                                    %             assign_ind = assign_ind(largest_ind(1)); %Just take the first one for simplicity
+                                    %         else
+                                    %             assign_ind = find(matching_activating);
+                                    %             assign_ind = assign_ind(largest_ind);
+                                    %         end
+                                    % 
+                                    % 
+                                    %         %Identify the next X bin
+                                    % 
+                                    %     elseif length(find(matchingBOTH)) == 0
+                                    %         error('Invalid option.')
+                                    %     else
+                                    %         assign_ind = find(matchingBOTH);
+                                    %     end
+                                    % 
+                                    % 
+                                    % 
+                                    %     x = 1;
+        
+                                    % else %Identify closest two bins and distribute between them
+                                    % 
+                                    %     %Identify closest two bins
+                                    %     snk_lo = max(find((snkTs - T) <= 0));
+                                    %     snk_hi = min(find((snkTs - T) > 0));
+                                    % 
+                                    %     %Calculate division using 
+                                    %     eta_lo = (snkTs(snk_hi) - T)./(snkTs(snk_hi) - snkTs(snk_lo));
+                                    %     eta_hi = 1 - eta_lo;
+                                    % 
+                                    %     %Distribute
+                                    %     h_iT_in(snk_lo) = h_iT_in(snk_lo) + eta_lo * sabs * Nfrac;
+                                    %     h_iT_in(snk_hi) = h_iT_in(snk_hi) + eta_hi * sabs * Nfrac;
+                                    % 
+                                    % end
+    
+    
+                                else
+        
+                                    if T < min(snkTs) %Case where it goes into the last trailing bin
+                                      
+                                        h_iT_in(1) = h_iT_in(1) + sabs * Nfrac;
+                                        
+                                        %Adjust temperature to preserve energy -
+                                        %ADD
+                                   
+        
+                                    elseif T >= max(snkTs)
+        
+                                        h_iT_in(end) = h_iT_in(end) + sabs * Nfrac;
+        
+                                    else %Identify closest two bins and distribute between them
+        
+                                        %Identify closest two bins
+                                        snk_lo = max(find((snkTs - T) <= 0));
+                                        snk_hi = min(find((snkTs - T) > 0));
+        
+                                        %Calculate division using 
+                                        eta_lo = (snkTs(snk_hi) - T)./(snkTs(snk_hi) - snkTs(snk_lo));
+                                        eta_hi = 1 - eta_lo;
+        
+                                        %Distribute
+                                        h_iT_in(snk_lo) = h_iT_in(snk_lo) + eta_lo * sabs * Nfrac;
+                                        h_iT_in(snk_hi) = h_iT_in(snk_hi) + eta_hi * sabs * Nfrac;
+        
+                                        x = 1;
+                                        
+        
+                                    end
+                                end
                             end
 
                             %Detect NaNs

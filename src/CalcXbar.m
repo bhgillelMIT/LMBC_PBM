@@ -1,9 +1,32 @@
-function [X_bar, Xs_m, Ns_m] = CalcXbar(y_t, iz, im, params)
+function [X_bar, Xs_m, Ns_m] = CalcXbar(y, y_t, iz, im, params)
 
+    %Pull overall cell value
+    ind_m = find(params.zinds_m(:) == iz & params.xinds_m(:) == im);
+    xinds_zm = find(params.xinds == im & params.zinds == iz);
+    
     
 
     if params.react.active %Weighted average
-        x = 1;      
+
+        %Pull values
+        ys_zm = y(xinds_zm);
+        Xs_m = params.Xs(xinds_zm);
+        %Ts_m = params.Ts(xinds_zm);
+
+        %Calculate y fraction
+        y_frac = ys_zm/(sum(ys_zm)+1E-32);
+
+        %Calcualte weighted average
+        if any(y_frac > 0)
+            X_bar = sum(y_frac(:) .* Xs_m(:));
+        else
+            X_bar = mean(Xs_m);
+        end
+
+        %Define other outputs
+        Ns_m = ys_zm;
+
+
     else %Assume uniform distribution of temperatures and conversions
 
         try

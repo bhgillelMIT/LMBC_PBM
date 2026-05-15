@@ -23,9 +23,9 @@ function chars = SBM_Characteristics(params)
 
 %% Load data
 
-    if nargin < 1
-        PBM_v3();
-    end
+    % if nargin < 1
+    %     PBM_v3();
+    % end
 
     %Settings
     interp_method = 'linear'; 
@@ -36,7 +36,7 @@ function chars = SBM_Characteristics(params)
     p0 = 101325;
 
     %Inputs
-    folder = params.SBM_folder; %'SBM Characteristics/Demo2/';
+    folder = 'Data/SBM Characteristics/run2/'; %params.SBM_folder; %'SBM Characteristics/Demo2/';
     
     
 
@@ -271,22 +271,22 @@ function chars = SBM_Characteristics(params)
         Xs_z = chars.ms{1}.Xs_zs{it}{ix}
 
         subplot(1,2,1);
-        plot(Ts_z, zs_interp, 'r-'); hold on;
+        plot(Ts_z-273.15, 100*zs_interp, 'r-'); hold on;
         
         
         subplot(1,2,2);
-        plot(Xs_z, 100.*zs_interp, 'k-'); hold on;
+        plot(100*Xs_z, 100.*zs_interp, 'b-'); hold on;
 
     end
 
     subplot(1,2,1);
-    xlabel('Temperature (K)'); ylabel('Z-Position (cm)');
+    xlabel('Temperature (C)'); ylabel('Z-Position (cm)');
     grid on; grid minor; axis square;
     title('Temperature Curves');
     set(gca, 'FontSize', 18);
 
     subplot(1,2,2);
-    xlabel('Temperature (K)'); ylabel('Z-Position (cm)');
+    xlabel('Conversion (%)'); ylabel('Z-Position (cm)');
     grid on; grid minor; axis square;
     title('Conversion Curves');
     set(gca, 'FontSize', 18);

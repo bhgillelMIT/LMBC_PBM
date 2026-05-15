@@ -1,7 +1,7 @@
 function status = PBM_output(t, y, flag)
 
     %Make parameters global
-    global params
+    global output %params
 
     %Allocate storage vectors
     %persistent its 
@@ -10,7 +10,8 @@ function status = PBM_output(t, y, flag)
     % if strcmp(flag, 'init')
     %     params.its = 1;
     % else
-    params.its = params.its + 1;
+    output.its = output.its + 1;
+    %params.its = params.its + 1;
     % end
 
         
@@ -26,25 +27,26 @@ function status = PBM_output(t, y, flag)
 
     %Calculate mass and record
     if ~strcmp(flag, 'done')
-        params.m_total(params.its+1) = sum(params.mms_rep .* y(:,end) .* params.Vcells_rep);
+        output.m_total(output.its+1) = sum(output.mms_rep .* y(:,end) .* output.Vcells_rep);
+        %params.m_total(params.its+1) = sum(params.mms_rep .* y(:,end) .* params.Vcells_rep);
     end
     
 
 
     %Print update
-    if params.sol.solve_details
+    if output.sol.solve_details
         detail_str = 'true';
     else
         detail_str = 'false';
     end
-    fprintf('\nPBM (Iteration %d; flag = %s; detail = %s) \n\n', params.its, flag, detail_str);
+    fprintf('\nPBM (Iteration %d; flag = %s; detail = %s) \n\n', output.its, flag, detail_str);
 
-    %Update params
-    if mod(params.its, params.sol.solve_detail_its) > 0 & ~any(isnan(params.break.badd))
-        params.sol.solve_details = false; %Switch off
-    else
-        params.sol.solve_details = true; %Switch on
-    end
+    % %Update params
+    % if mod(output.its, output.sol.solve_detail_its) > 0 & ~any(isnan(output.break.badd))
+    %     output.sol.solve_details = false; %Switch off
+    % else
+    %     output.sol.solve_details = true; %Switch on
+    % end
 
 
     %Define status

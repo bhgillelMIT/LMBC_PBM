@@ -1,4 +1,5 @@
-function merged = MergeBins(params)
+function merged = MergeBins(params, saveplots)
+
 
     %Plot settings
     ms = 18;
@@ -6,6 +7,9 @@ function merged = MergeBins(params)
     lw = 2;
 
     %Debug settings
+    saveplots = false;
+
+    %Specify number of bins
     Nm_max = params.disc.Nms;
 
 
@@ -17,7 +21,10 @@ function merged = MergeBins(params)
     merged = cell(1,params.Nms);
 
     %Define zs
-    zs_all = linspace(0, params.reactor.H, length(params.T_z.chars.Ts_zs{1}{1}{1}));
+    zs_all = linspace(0, params.reactor.H, length(params.T_z.chars.Ts_zs{params.Nms}{1}{1}));
+
+    %Pull number of conversion bins
+    NX = params.chars.N_Xis;
 
     %Iterate through mass
     
@@ -27,6 +34,11 @@ function merged = MergeBins(params)
         %Pull characteristics
         Tzs = params.T_z.chars.Ts_zs{im};
         Tcs = params.T_z.chars.Ts_cs{im};
+        Tbs = params.T_z.chars.Ts_bs{im};
+        Xcs = params.T_z.chars.Xs_cs{im};
+        Xbs = params.T_z.chars.Xs_bs{im};
+
+
 
         %Determine number
         Nx = length(Tcs{1});
@@ -44,16 +56,20 @@ function merged = MergeBins(params)
         % 
         % end
 
+        %
+
 
         
         %Iterate through initial conversion cases
-        for ix = 1:1 %1:Nx
+        for ix = 1:NX %1:Nx
 
             %Debug plot
             if params.debug
                 debug_fig = figure();
                 subplot(1,2,1);
+                Tzs_all = zeros(length(Tzs{1}{ix}), length(Tcs));
                 for it = 1:length(Tcs)
+                    Tzs_all(:,it) = Tzs{it}{ix};
                     plot(Tzs{it}{ix}, linspace(0, params.reactor.H, length(Tzs{it}{ix})), 'r-'); hold on;
                     plot(Tcs{it}{ix}, params.mesh.volcell_cents(:,2), 'r.', 'MarkerSize', ms); hold on;
                 end
@@ -65,15 +81,24 @@ function merged = MergeBins(params)
             %Pull current bin temperatures
             Nt = length(Tcs);
             Tcz = zeros(Nt, params.Nz);
+            Xcz = zeros(Nt, params.Nz);
             for it = 1:Nt
                 Tcz(it,:) = Tcs{it}{ix}';
+                Tbz(it,:) = Tbs{it}{ix}';
+                Xcz(it,:) = Xcs{it}{ix}';
+                Xbz(it,:) = Xbs{it}{ix}';
             end
             
 
             %Append liquid temperature to Tcz
             for iz = 1:params.Nz
                 Tcz(Nt+1, iz) = params.T_Lz(params.mesh.volcell_cents(iz, 2));
+                Tbz(Nt+1, iz) = params.T_Lz(params.mesh.volcell_cents(iz, 2));
+                Xcz(Nt+1, iz) = 1;
+                Xbz(Nt+1, iz) = 1;
             end
+            Tbz(Nt+1,iz+1) = params.T_Lz(params.mesh.volcell_cents(iz, 2));
+            Xbz(Nt+1,iz+1) = 1;
             Nt = Nt + 1;
             Tcz_total = Tcz; %Copy of the original bins
 
@@ -141,6 +166,9 @@ function merged = MergeBins(params)
                         %Mark the bin bounds to eliminate
                                 % Tc_new(end+1,:) = Tcz(imin, iz:params.Nz);
                         Tcz(imerged, iz:params.Nz) = -1; %Set merged values to negative 1 to indicate 
+                        Xcz(imerged, iz:params.Nz) = -1;
+                        Tbz(imerged, (iz+1):(params.Nz+1)) = -1;
+                        Xbz(imerged, (iz+1):(params.Nz+1)) = -1;
     
                         %Log indexes correspondng to bin boundaries
                         
@@ -173,7 +201,7 @@ function merged = MergeBins(params)
             end
 
             %Plot the final bin boundaries at each level
-            if params.debug
+            if params.debug & saveplots
                 subplot(1,2,2);
                 for iz = 1:params.Nz
                     z = params.mesh.volcell_cents(iz,2);
@@ -188,7 +216,7 @@ function merged = MergeBins(params)
 
             %Post-process results to determine which bins merge into which 
             N_bins = N_bins - 1;
-            figure();
+            mergedfig = figure();
             
             bins_in = zeros(Nt-1, params.Nz);
             bins_in(:,1) = fliplr([1:(Nt-1)])';
@@ -212,40 +240,46 @@ function merged = MergeBins(params)
                 end
 
                 %Debug plot
+                if saveplots
                 
-                if iz == 1
-                    active_inds = 1:(Nt);
-                    zs_plot = linspace(0, params.zms(iz), 20);
-                elseif iz == params.Nz
-                    active_inds = Tcz(:, iz-1) > 0;
-                    zs_plot = linspace(params.zms(iz-1), params.reactor.H, 20);
-                else
-                    active_inds = Tcz(:, iz-1) > 0;
-                    zs_plot = linspace(params.zms(iz-1), params.zms(iz), 20);
-                end
-                active_inds = find(active_inds);
-                for i = 1:length(active_inds(1:end-1))
-                    ia = active_inds(i);
-                    Tz_plot = interp1(zs_all, Tzs{ia}{ix}, zs_plot);
+                    if iz == 1
+                        active_inds = 1:(Nt);
+                        zs_plot = linspace(0, params.zms(iz), 20);
+                    elseif iz == params.Nz
+                        active_inds = Tcz(:, iz-1) > 0;
+                        zs_plot = linspace(params.zms(iz-1), params.reactor.H, 20);
+                    else
+                        active_inds = Tcz(:, iz-1) > 0;
+                        zs_plot = linspace(params.zms(iz-1), params.zms(iz), 20);
+                    end
+                    active_inds = find(active_inds);
+                    for i = 1:length(active_inds(1:end-1))
+                        ia = active_inds(i);
+                        Tz_plot = interp1(zs_all, Tzs{ia}{ix}, zs_plot);
+                        subplot(1,2,1);
+                        plot(Tz_plot, zs_plot, 'r-', 'LineWidth', 1); hold on
+                        subplot(1,2,2);
+                        plot(Tz_plot, zs_plot, 'r-', 'LineWidth', 1); hold on
+    
+    
+                    end
+                    
+    
                     subplot(1,2,1);
-                    plot(Tz_plot, zs_plot, 'r-'); hold on
+                    grid on; grid minor; axis square;
+                    xlabel('Temperature (K)'); ylabel('Z-position (m)')
+                    title(sprintf('Merged Bins (i_m = %d; d = %0.2f; i_x = %d)', im, params.dms(im), ix));
+                    set(gca, 'FontSize', 14, 'FontWeight', 'bold');
+    
                     subplot(1,2,2);
-                    plot(Tz_plot, zs_plot, 'r-'); hold on
-
-
+                    grid on; grid minor; axis square;
+                    xlabel('Temperature (K)'); ylabel('Z-position (m)')
+                    xlim([1350, 1550]);
+                    title(sprintf('Merged Bins (i_m = %d; d = %0.2f; i_x = %d)', im, params.dms(im), ix));
+                    set(gca, 'FontSize', 14, 'FontWeight', 'bold');
+                    
+                    Ts_z = 1;
                 end
-                
-
-                subplot(1,2,1);
-                grid on; grid minor; axis square;
-                xlabel('Temperature (K)'); ylabel('z (m)')
-
-                subplot(1,2,2);
-                grid on; grid minor; axis square;
-                xlabel('Temperature (K)'); ylabel('z (m)')
-                xlim([1350, 1550]);
-                
-                Ts_z = 1;
 
 
             end
@@ -253,14 +287,80 @@ function merged = MergeBins(params)
             N_cells(im) = sum(N_bins); %Number of cells required for the temperature
             
 
+            %Log results
+            
+
+
+            %Log results
+            merge.Tcz = Tcz;
+            merge.Tbz = Tbz;
+            merge.Xcz = Xcz;
+            merge.Xbz = Xbz;
+            merge.bins_in = bins_in;
+            merge.bins_merged = bins_merged; 
+            merged{im}{ix} = merge;
+
+            %Output figure
+            if saveplots
+                filename = sprintf('Merged_im=%d_ix=%d.png', im, ix);
+                filepath = fullfile(params.dir_merged, filename);
+                saveas(mergedfig,filepath)
+                    
+    
+            end
 
         end
 
-        %Log results
-        merge.Tcz = Tcz;
-        merge.bins_in = bins_in;
-        merge.bins_merged = bins_merged; 
-        merged{im} = merge;
+        
+
+
+
+    end
+
+    %Remove unnecessary bins in trailing conversion bins
+    for im = 1:params.Nms
+        for ix = 1:params.chars.N_Xis
+            merge = merged{im}{ix};
+            Tcz = merge.Tcz;
+
+            %Determine if this ix is a trailing
+            trailing_layers = all(diff(Tcz(1:end-1,:)) == 0);
+            trailing = trailing_layers(1);
+            active_layers = ~trailing_layers;
+
+            if trailing
+
+                %Identify first z-layer to have merged bins
+                iz_first = min(find(active_layers)); %Exclude first layer
+
+                %Identify active bins in that layer
+                active_bins = Tcz(:,iz_first) > 0;
+                inactive_bins = ~active_bins;
+                inactive_inds = find(inactive_bins);
+
+                %Pull the bin indecies of the initial layer
+                bins_active = merge.bins_in(:,iz_first);
+    
+                %If above second layer
+                if iz_first > 2
+                    for iz = 2:iz_first
+                        merge.Tcz(inactive_inds,iz) = -1;
+                        merge.bins_in(:,iz) = bins_active;
+    
+                    end
+
+                    
+
+                end
+
+                merged{im}{ix} = merge;
+
+
+            end
+
+
+
+        end
 
 
     end

@@ -3,6 +3,10 @@
 
 function params = CalcTempConvMeans(y, params)
 
+    %Remove any unreal numbers
+    bad_inds = imag(y) ~= 0;
+    y(bad_inds) = 0;
+
     if params.heat.active
 
 

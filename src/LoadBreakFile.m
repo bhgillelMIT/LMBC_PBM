@@ -1,6 +1,6 @@
 function params = LoadBreakFile(params)
 
-    global params
+    %global params
 
     if params.break.loadfile
         try
